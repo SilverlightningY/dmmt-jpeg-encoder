@@ -15,9 +15,9 @@ pub struct RangeColorFormat<T> {
 }
 
 pub struct YCbCrColorFormat<T> {
-    luma: T,
-    chroma_blue: T,
-    chroma_red: T,
+    pub luma: T,
+    pub chroma_blue: T,
+    pub chroma_red: T,
 }
 
 impl From<&RangeColorFormat<u16>> for RGBColorFormat<f32> {
