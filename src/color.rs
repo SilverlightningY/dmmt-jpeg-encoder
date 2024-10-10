@@ -7,21 +7,27 @@ pub struct RGBColorFormat<T> {
     blue: T,
 }
 
-impl From<&RangeColorFormat<u16>> for RGBColorFormat<u8> {
-    fn from(value: &RangeColorFormat<u16>) -> Self {
-        RGBColorFormat {
-            red: (value.red as f32 / value.max as f32 * u8::MAX as f32).floor() as u8,
-            green: (value.green as f32 / value.max as f32 * u8::MAX as f32).floor() as u8,
-            blue: (value.blue as f32 / value.max as f32 * u8::MAX as f32).floor() as u8,
-        }
-    }
-}
-
 pub struct RangeColorFormat<T> {
     max: T,
     red: T,
     green: T,
     blue: T,
+}
+
+pub struct YCbCrColorFormat<T> {
+    pub luma: T,
+    pub chroma_blue: T,
+    pub chroma_red: T,
+}
+
+impl From<&RangeColorFormat<u16>> for RGBColorFormat<f32> {
+    fn from(value: &RangeColorFormat<u16>) -> Self {
+        RGBColorFormat {
+            red: value.red as f32 / value.max as f32,
+            green: value.green as f32 / value.max as f32,
+            blue: value.blue as f32 / value.max as f32,
+        }
+    }
 }
 
 impl<T: PartialOrd<T> + Display> RangeColorFormat<T> {
@@ -38,31 +44,29 @@ impl<T: PartialOrd<T> + Display> RangeColorFormat<T> {
     }
 }
 
-pub struct YCbCrColorFormat<T> {
-    luma: T,
-    chroma_blue: T,
-    chroma_red: T,
-}
+impl From<&RGBColorFormat<f32>> for YCbCrColorFormat<f32> {
+    fn from(value: &RGBColorFormat<f32>) -> Self {
+        let red = value.red;
+        let green = value.green;
+        let blue = value.blue;
 
-impl From<&RGBColorFormat<u8>> for YCbCrColorFormat<u8> {
-    fn from(value: &RGBColorFormat<u8>) -> Self {
-        let red = value.red as f32 * 0.299_f32;
-        let green = value.green as f32 * 0.587_f32;
-        let blue = value.blue as f32 * 0.114_f32;
-        let luma = red + green + blue;
-        let red = value.red as f32 * -0.1687_f32;
-        let green = value.green as f32 * 0.3312_f32;
-        let blue = value.blue as f32 * 0.5_f32;
-        let chroma_blue = red + green + blue + 0.5_f32;
-        let red = value.red as f32 * 0.5_f32;
-        let green = value.green as f32 * -0.4186_f32;
-        let blue = value.blue as f32 * -0.0813_f32;
-        let chroma_red = red + green + blue + 0.5_f32;
+        let weighted_red = red * 0.299_f32;
+        let weighted_green = green * 0.587_f32;
+        let weighted_blue = blue * 0.114_f32;
+        let luma = weighted_red + weighted_green + weighted_blue;
+        let weighted_red = red * -0.1687_f32;
+        let weighted_green = green * -0.3312_f32;
+        let weighted_blue = blue * 0.5_f32;
+        let chroma_blue = weighted_red + weighted_green + weighted_blue + 0.5_f32;
+        let weighted_red = red * 0.5_f32;
+        let weighted_green = green * -0.4186_f32;
+        let weighted_blue = blue * -0.0813_f32;
+        let chroma_red = weighted_red + weighted_green + weighted_blue + 0.5_f32;
 
         YCbCrColorFormat {
-            luma: luma.floor() as u8,
-            chroma_blue: chroma_blue.floor() as u8,
-            chroma_red: chroma_red.floor() as u8,
+            luma,
+            chroma_blue,
+            chroma_red,
         }
     }
 }
@@ -74,67 +78,100 @@ mod test {
     #[test]
     fn convert_rgb_to_ycbcr() {
         let rgb = RGBColorFormat {
-            red: 250_u8,
-            green: 128_u8,
-            blue: 14_u8,
+            red: 0.25_f32,
+            green: 0.75_f32,
+            blue: 0.333_f32,
         };
-        let result: YCbCrColorFormat<u8> = YCbCrColorFormat::from(&rgb);
-        assert_eq!(result.luma, 151, "luma is wrong");
-        assert_eq!(result.chroma_blue, 7, "chroma blue is wrong");
-        assert_eq!(result.chroma_red, 70, "chroma red is wrong");
+        let result = YCbCrColorFormat::from(&rgb);
+        assert!(
+            result.luma >= 0.552962_f32 && result.luma < 0.552963_f32,
+            "luma is wrong"
+        );
+        assert!(
+            result.chroma_blue >= 0.375925 && result.chroma_blue < 0.375926,
+            "chroma blue is wrong"
+        );
+        assert!(
+            result.chroma_red >= 0.283977 && result.chroma_red < 0.283978,
+            "chroma red is wrong"
+        );
     }
 
     #[test]
     fn convert_rgb_white_to_ycbcr() {
         let rgb = RGBColorFormat {
-            red: u8::MAX,
-            green: u8::MAX,
-            blue: u8::MAX,
+            red: 1_f32,
+            green: 1_f32,
+            blue: 1_f32,
         };
         let result = YCbCrColorFormat::from(&rgb);
-        assert_eq!(result.luma, u8::MAX, "luma is wrong");
-        assert_eq!(result.chroma_blue, 169_u8, "chroma blue is wrong");
-        assert_eq!(result.chroma_red, 0_u8, "chroma red is wrong");
+        assert!(
+            result.luma >= 0.999999_f32 && result.luma <= 1_f32,
+            "luma is wrong"
+        );
+        assert!(
+            result.chroma_blue >= 0.499999_f32 && result.chroma_blue <= 0.5001,
+            "chroma blue is wrong"
+        );
+        assert!(
+            result.chroma_red >= 0.499999_f32 && result.chroma_red <= 0.5001,
+            "chroma red is wrong"
+        );
     }
 
     #[test]
     fn convert_rgb_black_to_ycbcr() {
         let rgb = RGBColorFormat {
-            red: 0_u8,
-            green: 0_u8,
-            blue: 0_u8,
+            red: 0_f32,
+            green: 0_f32,
+            blue: 0_f32,
         };
         let result = YCbCrColorFormat::from(&rgb);
-        assert_eq!(result.luma, 0_u8, "luma is wrong");
-        assert_eq!(result.chroma_blue, 0_u8, "chroma blue is wrong");
-        assert_eq!(result.chroma_red, 0_u8, "chroma red is wrong");
+        assert_eq!(result.luma, 0_f32, "luma is wrong");
+        assert_eq!(result.chroma_blue, 0.5_f32, "chroma blue is wrong");
+        assert_eq!(result.chroma_red, 0.5_f32, "chroma red is wrong");
     }
 
     #[test]
     fn convert_range_color_to_rgb() {
         let range_color = RangeColorFormat::new(17734_u16, 128_u16, 14355_u16, 9_u16);
         let result = RGBColorFormat::from(&range_color);
-        assert_eq!(result.red, 1, "red is wrong");
-        assert_eq!(result.green, 206, "green is wrong");
-        assert_eq!(result.blue, 0, "blue is wrong");
+        assert!(
+            result.red >= 7.209e-3_f32 && result.red <= 7.219e-3_f32,
+            "red is wrong"
+        );
+        assert!(
+            result.green >= 0.809459_f32 && result.red <= 0.809469_f32,
+            "green is wrong"
+        );
+        assert!(
+            result.blue >= 4.99e-4_f32 && result.blue <= 5.09e-4_f32,
+            "blue is wrong"
+        );
     }
 
     #[test]
     fn convert_range_color_white_to_rgb() {
         let range_color = RangeColorFormat::new(u16::MAX, u16::MAX, u16::MAX, u16::MAX);
         let result = RGBColorFormat::from(&range_color);
-        assert_eq!(result.red, 255, "red is wrong");
-        assert_eq!(result.green, 255, "green is wrong");
-        assert_eq!(result.blue, 255, "blue is wrong");
+        assert_eq!(result.red, 1_f32, "red is wrong");
+        assert_eq!(result.green, 1_f32, "green is wrong");
+        assert_eq!(result.blue, 1_f32, "blue is wrong");
     }
 
     #[test]
     fn convert_range_color_4bit_to_rgb() {
-        let range_color = RangeColorFormat::new(15_u16, 2_u16, 5_u16, 15_u16);
+        let range_color = RangeColorFormat::new(0b1111_u16, 0b0010_u16, 0b0101_u16, 0b1111_u16);
         let result = RGBColorFormat::from(&range_color);
-        assert_eq!(result.red, 34, "red is wrong");
-        assert_eq!(result.green, 85, "green is wrong");
-        assert_eq!(result.blue, 255, "blue is wrong");
+        assert!(
+            result.red >= 0.133333 && result.red <= 0.133334,
+            "red is wrong"
+        );
+        assert!(
+            result.green >= 0.333333 && result.green <= 0.333334,
+            "green is wrong"
+        );
+        assert!(result.blue == 1_f32, "blue is wrong");
     }
 
     #[test]
