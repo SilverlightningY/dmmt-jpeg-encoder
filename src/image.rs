@@ -1,3 +1,8 @@
+use std::iter::Sum;
+use std::ops::AddAssign;
+use std::ops::Div;
+use std::ops::DivAssign;
+
 pub struct Image<T> {
     width: u16,
     height: u16,
@@ -77,15 +82,26 @@ impl<'a, T> ChannelView<'a, T> {
     }
 }
 
+impl<T> Image<T> {
+    pub fn channel_view(
+        &self,
+        channel_index: ChannelIndex,
+        vertical_rate: u16,
+        horizontal_rate: u16,
+        method: ChannelSubsamplingMethod,
+    ) -> ChannelView<T> {
+        ChannelView::from_image(self, channel_index, vertical_rate, horizontal_rate, method)
+    }
+}
+
 impl<'a, T> Iterator for ChannelView<'a, T> {
     type Item = ChannelColumnView<'a, T>;
     fn nth(&mut self, n: usize) -> Option<ChannelColumnView<'a, T>> {
-        if self.vertical_pos + (self.image.vertical_rate as usize * (n + 1)) as i16
-            >= self.image.image.height as i16
-        {
+        let new_position = self.vertical_pos + (self.image.vertical_rate as usize * (n + 1)) as i16;
+        if new_position >= self.image.image.height as i16 {
             return None;
         }
-        self.vertical_pos += (self.image.vertical_rate as usize * (n + 1)) as i16;
+        self.vertical_pos = new_position;
         Some(ChannelColumnView {
             image: ChannelSubsamplingInfo {
                 image: self.image.image,
@@ -103,8 +119,6 @@ impl<'a, T> Iterator for ChannelView<'a, T> {
     }
 }
 
-use std::iter::Sum;
-use std::ops::Div;
 fn average<T>(v: &[T]) -> T
 where
     T: Copy + Div<Output = T> + From<u16> + Sum<T>,
@@ -112,46 +126,31 @@ where
     v.iter().copied().sum::<T>() / From::from(v.len() as _)
 }
 
-impl<
-        'a,
-        T: Sized
-            + Copy
-            + std::ops::AddAssign
-            + std::ops::DivAssign
-            + std::iter::Sum
-            + std::convert::From<u16>
-            + std::ops::Div
-            + Div<Output = T>,
-    > Iterator for ChannelColumnView<'a, T>
+impl<'a, T> Iterator for ChannelColumnView<'a, T>
+where
+    T: Sized + Copy + AddAssign + DivAssign + Sum + From<u16> + Div + Div<Output = T>,
 {
     type Item = T;
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        if self.horizontal_pos + (self.image.vertical_rate as usize * n) as i16
-            >= self.image.image.width as i16
-        {
+        let new_position =
+            self.horizontal_pos + (self.image.horizontal_rate as usize * (n + 1)) as i16;
+        if new_position >= self.image.image.width as i16 {
             return None;
         }
-        self.horizontal_pos += (self.image.horizontal_rate as usize * (n + 1)) as i16;
+        self.horizontal_pos = new_position;
         match self.image.method {
             ChannelSubsamplingMethod::Skip => {
                 let index: usize = (self.horizontal_pos
                     + self.vertical_pos * self.image.image.width as i16)
                     as usize;
-                let l: T = self.image.image[self.image.channel_index][index];
-                return Some(l);
+                Some(self.image.image[self.image.channel_index][index])
             }
             ChannelSubsamplingMethod::Average => {
                 let mut acc: Vec<T> = vec![];
-                for x in (std::ops::Range {
-                    start: 0,
-                    end: self.image.horizontal_rate,
-                }) {
+                for x in 0..self.image.horizontal_rate {
                     let clamped_x =
                         std::cmp::min(self.image.image.width - 1, x + self.horizontal_pos as u16);
-                    for y in (std::ops::Range {
-                        start: 0,
-                        end: self.image.vertical_rate,
-                    }) {
+                    for y in 0..self.image.vertical_rate {
                         let clamped_y = std::cmp::min(
                             self.image.image.height - 1,
                             y + self.vertical_pos as u16,
@@ -161,7 +160,7 @@ impl<
                         acc.push(self.image.image[self.image.channel_index][index]);
                     }
                 }
-                return Some(average(&acc));
+                Some(average(&acc))
             }
         }
     }
@@ -179,19 +178,16 @@ mod test {
         let my_img: Image<f32> = Image {
             width: 4,
             height: 4,
-            luma: [
+            luma: vec![
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
                 16.0,
-            ]
-            .to_vec(),
-            chroma_blue: [
+            ],
+            chroma_blue: vec![
                 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ]
-            .to_vec(),
-            chroma_red: [
+            ],
+            chroma_red: vec![
                 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ]
-            .to_vec(),
+            ],
         };
 
         let mut my_itr: ChannelView<f32> = ChannelView::from_image(
@@ -215,19 +211,16 @@ mod test {
         let my_img: Image<f32> = Image {
             width: 4,
             height: 4,
-            chroma_blue: [
+            chroma_blue: vec![
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
                 16.0,
-            ]
-            .to_vec(),
-            luma: [
+            ],
+            luma: vec![
                 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ]
-            .to_vec(),
-            chroma_red: [
+            ],
+            chroma_red: vec![
                 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ]
-            .to_vec(),
+            ],
         };
 
         let mut my_itr: ChannelView<f32> = ChannelView::from_image(
@@ -251,19 +244,16 @@ mod test {
         let my_img: Image<f32> = Image {
             width: 4,
             height: 4,
-            chroma_blue: [
+            chroma_blue: vec![
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
                 16.0,
-            ]
-            .to_vec(),
-            luma: [
+            ],
+            luma: vec![
                 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ]
-            .to_vec(),
-            chroma_red: [
+            ],
+            chroma_red: vec![
                 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ]
-            .to_vec(),
+            ],
         };
 
         let mut my_itr: ChannelView<f32> = ChannelView::from_image(
@@ -288,23 +278,19 @@ mod test {
         let my_img: Image<f32> = Image {
             width: 4,
             height: 4,
-            chroma_blue: [
+            chroma_blue: vec![
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
                 16.0,
-            ]
-            .to_vec(),
-            luma: [
+            ],
+            luma: vec![
                 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ]
-            .to_vec(),
-            chroma_red: [
+            ],
+            chroma_red: vec![
                 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ]
-            .to_vec(),
+            ],
         };
 
-        let mut my_itr: ChannelView<f32> = ChannelView::from_image(
-            &my_img,
+        let mut my_itr: ChannelView<f32> = my_img.channel_view(
             ChannelIndex::ChromaBlue,
             2,
             1,
@@ -323,19 +309,16 @@ mod test {
         let my_img: Image<f32> = Image {
             width: 4,
             height: 4,
-            chroma_blue: [
+            chroma_blue: vec![
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
                 16.0,
-            ]
-            .to_vec(),
-            luma: [
+            ],
+            luma: vec![
                 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ]
-            .to_vec(),
-            chroma_red: [
+            ],
+            chroma_red: vec![
                 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ]
-            .to_vec(),
+            ],
         };
 
         let mut my_itr: ChannelView<f32> = ChannelView::from_image(
