@@ -3,5 +3,7 @@ name = "dmmt-jpeg-encoder"
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
+description = "A simple JPEG encoder, developed for educational purposes."
 
 [dependencies]
+clap = { version = ">=4.5.20, <5.0.0", features = ["cargo"] }
