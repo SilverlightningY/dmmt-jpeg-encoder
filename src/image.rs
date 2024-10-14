@@ -4,11 +4,11 @@ use std::ops::Div;
 use std::ops::DivAssign;
 
 pub struct Image<T> {
-    width: u16,
-    height: u16,
-    luma: Vec<T>,
-    chroma_blue: Vec<T>,
-    chroma_red: Vec<T>,
+    pub width: u16,
+    pub height: u16,
+    pub luma: Vec<T>,
+    pub chroma_blue: Vec<T>,
+    pub chroma_red: Vec<T>,
 }
 
 #[derive(Clone, Copy)]
