@@ -59,9 +59,9 @@ impl<R: Read> Iterator for PPMTokenizer<R> {
 struct PPMParser {}
 
 impl PPMParser {
-    pub fn parse<R: Read>(mut tokenizer: PPMTokenizer<R>) -> Result<image::Image<f32>, String> {
-        let mut header: Vec<String> = Vec::new();
-
+    pub fn parse<R: Iterator<Item = String>>(
+        mut tokenizer: R,
+    ) -> Result<image::Image<f32>, String> {
         let mut luma: Vec<f32> = Vec::new();
         let mut chroma_blue: Vec<f32> = Vec::new();
         let mut chroma_red: Vec<f32> = Vec::new();
@@ -77,8 +77,7 @@ impl PPMParser {
         let mut pixel: Vec<u16> = Vec::new();
 
         for token in tokenizer {
-            let t = token;
-            pixel.push(t.parse().unwrap());
+            pixel.push(token.parse().unwrap());
             if pixel.len() == 3 {
                 let col: RangeColorFormat<u16> =
                     RangeColorFormat::new(max, pixel[0], pixel[1], pixel[2]);
@@ -87,18 +86,20 @@ impl PPMParser {
                 luma.push(result.luma);
                 chroma_blue.push(result.chroma_blue);
                 chroma_red.push(result.chroma_red);
-
                 pixel.clear();
             }
         }
 
+        if pixel.len() != 0 {
+            panic!("Invalid number of rgb values. Incomplete pixel")
+        }
         if width as u32 * height as u32 != luma.len() as u32 {
             panic!("Size of image in header does not match amount of pixels")
         }
 
         Ok(image::Image::<f32> {
-            width: width,
-            height: height,
+            width,
+            height,
             luma: luma.to_vec(),
             chroma_blue: chroma_blue.to_vec(),
             chroma_red: chroma_red.to_vec(),
@@ -140,5 +141,19 @@ mod test {
         let string = "P3\n# Example PPM image newlines\n3\n2\n255\n255\n0\n0\n0\n255\n0\n0\n0\n255\n255\n255\n0\n255\n0\n255\n0\n255\n255";
         let image = PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
         assert!(image.height == 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid number of rgb values. Incomplete pixel")]
+    fn incomplete_pixel() {
+        let string = "P3\n3 2 255 0 0 255 0 0";
+        PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Size of image in header does not match amount of pixels")]
+    fn wrong_size() {
+        let string = "P3\n3 2 255 0 0 255";
+        PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
     }
 }
