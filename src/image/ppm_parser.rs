@@ -1,5 +1,5 @@
+use super::Image;
 use crate::color::{RGBColorFormat, RangeColorFormat, YCbCrColorFormat};
-use crate::image;
 use std::io::Read;
 use std::str;
 
@@ -59,9 +59,7 @@ impl<R: Read> Iterator for PPMTokenizer<R> {
 struct PPMParser {}
 
 impl PPMParser {
-    pub fn parse<R: Iterator<Item = String>>(
-        mut tokenizer: R,
-    ) -> Result<image::Image<f32>, String> {
+    pub fn parse<R: Iterator<Item = String>>(mut tokenizer: R) -> Result<Image<f32>, String> {
         let mut luma: Vec<f32> = Vec::new();
         let mut chroma_blue: Vec<f32> = Vec::new();
         let mut chroma_red: Vec<f32> = Vec::new();
@@ -74,7 +72,7 @@ impl PPMParser {
         let height = tokenizer.next().unwrap().parse().unwrap_or(0);
         let max = tokenizer.next().unwrap().parse().unwrap_or(0);
 
-        let mut pixel: Vec<u16> = Vec::new();
+        let mut pixel = Vec::with_capacity(3);
 
         for token in tokenizer {
             pixel.push(token.parse().unwrap());
@@ -97,12 +95,12 @@ impl PPMParser {
             panic!("Size of image in header does not match amount of pixels")
         }
 
-        Ok(image::Image::<f32> {
+        Ok(Image::<f32> {
             width,
             height,
-            luma: luma.to_vec(),
-            chroma_blue: chroma_blue.to_vec(),
-            chroma_red: chroma_red.to_vec(),
+            luma,
+            chroma_blue,
+            chroma_red,
         })
     }
 }
@@ -111,7 +109,7 @@ impl PPMParser {
 mod test {
     use std::{fs::File, io::BufReader};
 
-    use crate::image::ppm_parser::{PPMParser, PPMTokenizer};
+    use super::{PPMParser, PPMTokenizer};
 
     #[test]
     fn read_image() {
