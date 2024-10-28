@@ -95,8 +95,8 @@ mod test {
     fn byte_mode_test() {
         let mut my_output: Vec<u8> = vec![];
         let mut writer = BitWriter::new(&mut my_output);
-        let input: &[u8] = &[72, 65, 76, 76, 79];
-        writer.write(input).expect("should not fail");
+        let input = &[72, 65, 76, 76, 79];
+        writer.write_all(input).expect("should not fail");
         writer.flush().expect("flushing should not fail");
         assert_eq!(my_output[0], 72);
         assert_eq!(my_output[1], 65);
@@ -128,7 +128,7 @@ mod test {
         // 0b111
         writer.write_bits(&[0xFF], 3).expect("ERR");
         // 0b11100000 00100000 01010000 100
-        writer.write(&[1, 2, 4 | 128]).expect("ERR");
+        writer.write_all(&[1, 2, 4 | 128]).expect("ERR");
         writer.flush().expect("ERR");
         assert_eq!(my_output.len(), 4);
         assert_eq!(my_output[0], 224);
