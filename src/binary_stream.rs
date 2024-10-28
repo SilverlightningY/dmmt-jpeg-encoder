@@ -42,11 +42,11 @@ impl<'a, T: Write> BitWriter<'a, T> {
             // this isn't (for large blocks of bites)
             let byte_index = bit_index / 8;
             let bit_index = bit_index % 8;
-            let bit_val: bool = (buf[byte_index] & ((1_u8) << bit_index)) > 0;
+            let bit_val: bool = (buf[byte_index] & ((128_u8) >> bit_index)) > 0;
             if bit_val {
-                self.buffer |= (1_u8) << self.buffer_space_used;
+                self.buffer |= (128_u8) >> self.buffer_space_used;
             } else {
-                self.buffer &= !((1_u8) << self.buffer_space_used);
+                self.buffer &= !((128_u8) >> self.buffer_space_used);
             }
             self.buffer_space_used += 1;
             if self.buffer_space_used == 8 {
@@ -109,7 +109,7 @@ mod test {
     fn bit_mode_test() {
         let mut my_output: Vec<u8> = vec![];
         let mut writer = BitWriter::new(&mut my_output);
-        // write 0x11000011 0x00001111 (in MSb notation)
+        // write 0x11000011 0x11110000 (in MSb notation)
         writer.write_bits(&[0xFF], 2).expect("ERR");
         writer.write_bits(&[0x00], 4).expect("ERR");
         writer.write_bits(&[0xFF], 2).expect("ERR");
@@ -117,20 +117,22 @@ mod test {
         writer.flush().expect("ERR");
         assert_eq!(my_output.len(), 2);
         assert_eq!(my_output[0], 195);
-        assert_eq!(my_output[1], 15);
+        assert_eq!(my_output[1], 15 << 4);
     }
 
     #[test]
     fn mixed_mode_test() {
         let mut my_output: Vec<u8> = vec![];
         let mut writer = BitWriter::new(&mut my_output);
+	// 0b111
         writer.write_bits(&[0xFF], 3).expect("ERR");
+	// 0b11100000 00100000 01010000 100
         writer.write(&[1, 2, 4 | 128]).expect("ERR");
         writer.flush().expect("ERR");
         assert_eq!(my_output.len(), 4);
-        assert_eq!(my_output[0], 15);
-        assert_eq!(my_output[1], 16);
-        assert_eq!(my_output[2], 32);
-        assert_eq!(my_output[3], 4);
+        assert_eq!(my_output[0], 224);
+        assert_eq!(my_output[1], 32);
+        assert_eq!(my_output[2], 80);
+        assert_eq!(my_output[3], 128);
     }
 }
