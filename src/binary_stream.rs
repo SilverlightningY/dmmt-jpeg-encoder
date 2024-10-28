@@ -39,7 +39,7 @@ impl<'a, T: Write> BitWriter<'a, T> {
             remaining_bits_offset = quick_byte_count * 8;
         }
         for bit_index in remaining_bits_offset..count {
-            // this isn't (for large blocks of bites)
+            // this isn't (for large blocks of bytes)
             let byte_index = bit_index / 8;
             let bit_index = bit_index % 8;
             let bit_val: bool =
