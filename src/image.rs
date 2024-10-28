@@ -5,6 +5,8 @@ use std::ops::AddAssign;
 use std::ops::Div;
 use std::ops::DivAssign;
 
+mod ppm_parser;
+
 pub struct Image<T> {
     width: u16,
     height: u16,
