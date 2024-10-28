@@ -42,11 +42,11 @@ impl<'a, T: Write> BitWriter<'a, T> {
             // this isn't (for large blocks of bites)
             let byte_index = bit_index / 8;
             let bit_index = bit_index % 8;
-            let bit_val: bool = (buf[byte_index] & ((128_u8) >> bit_index)) > 0;
+            let bit_val: bool = (buf[byte_index] & 0b10000000_u8.rotate_right(bit_index as u32)) > 0;
             if bit_val {
-                self.buffer |= (128_u8) >> self.buffer_space_used;
+                self.buffer |= 0b10000000_u8.rotate_right(self.buffer_space_used as u32);
             } else {
-                self.buffer &= !((128_u8) >> self.buffer_space_used);
+                self.buffer &= 0b01111111_u8.rotate_right(self.buffer_space_used as u32);
             }
             self.buffer_space_used += 1;
             if self.buffer_space_used == 8 {
