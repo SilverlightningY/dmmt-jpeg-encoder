@@ -42,7 +42,8 @@ impl<'a, T: Write> BitWriter<'a, T> {
             // this isn't (for large blocks of bites)
             let byte_index = bit_index / 8;
             let bit_index = bit_index % 8;
-            let bit_val: bool = (buf[byte_index] & 0b10000000_u8.rotate_right(bit_index as u32)) > 0;
+            let bit_val: bool =
+                (buf[byte_index] & 0b10000000_u8.rotate_right(bit_index as u32)) > 0;
             if bit_val {
                 self.buffer |= 0b10000000_u8.rotate_right(self.buffer_space_used as u32);
             } else {
@@ -124,9 +125,9 @@ mod test {
     fn mixed_mode_test() {
         let mut my_output: Vec<u8> = vec![];
         let mut writer = BitWriter::new(&mut my_output);
-	// 0b111
+        // 0b111
         writer.write_bits(&[0xFF], 3).expect("ERR");
-	// 0b11100000 00100000 01010000 100
+        // 0b11100000 00100000 01010000 100
         writer.write(&[1, 2, 4 | 128]).expect("ERR");
         writer.flush().expect("ERR");
         assert_eq!(my_output.len(), 4);
