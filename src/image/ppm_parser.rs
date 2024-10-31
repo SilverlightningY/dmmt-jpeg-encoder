@@ -89,10 +89,10 @@ impl PPMParser {
         }
 
         if pixel.len() != 0 {
-            panic!("Invalid number of rgb values. Incomplete pixel")
+            return Err("Invalid number of rgb values. Incomplete pixel".to_string());
         }
         if width as u32 * height as u32 != luma.len() as u32 {
-            panic!("Size of image in header does not match amount of pixels")
+            return Err("Size of image in header does not match amount of pixels".to_string());
         }
 
         Ok(Image::<f32> {
