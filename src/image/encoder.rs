@@ -64,20 +64,20 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
 
     pub fn encode(&mut self) -> io::Result<()> {
         self.write_start_of_file()?;
-        self.write_jfif_application_header()?;
+        self.write_exif_application_header()?;
         self.write_luminance_quantization_table()?;
         self.write_chrominance_quantization_table()?;
         self.write_start_of_frame()?;
         // write huffman tables
-        // self.write_start_of_scan()?;
-        // self.write_image_data()?;
+        self.write_start_of_scan()?;
+        self.write_image_data()?;
         self.write_end_of_file()?;
         Ok(())
     }
 
     fn write_segment(&mut self, marker: SegmentMarker, content: &[u8]) -> io::Result<()> {
         let marker = marker.as_binary_ref();
-        let segment_length = (marker.len() as u16 + content.len() as u16).to_be_bytes();
+        let segment_length = (marker.len() + content.len()).to_be_bytes();
         self.writer.write_all(marker)?;
         self.writer.write_all(&segment_length)?;
         self.writer.write_all(content)?;
@@ -100,22 +100,6 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
         self.write_segment(SegmentMarker::ExifApplication, &[])
     }
 
-    fn write_jfif_application_header(&mut self) -> io::Result<()> {
-        let width_bytes = self.image.width.to_be_bytes();
-        let height_bytes = self.image.height.to_be_bytes();
-        #[rustfmt::skip]
-        let content: Vec<u8> = [
-            b'J', b'F', b'I', b'F', b'\0',// Identifier
-            0x01, 0x02,             // Version
-            0x00,                   // Density
-            width_bytes[0], width_bytes[1], // X Density
-            height_bytes[0], height_bytes[1], // Y Density
-            0,                      // X Thumbnail
-            0                       // Y Thumbnail
-        ].to_vec();
-        self.write_segment(SegmentMarker::JfifApplication, &content)
-    }
-
     fn write_luminance_quantization_table(&mut self) -> io::Result<()> {
         self.write_segment(SegmentMarker::QuantizationTable, &[])
     }
@@ -125,20 +109,7 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
     }
 
     fn write_start_of_frame(&mut self) -> io::Result<()> {
-        let width_bytes = self.image.width.to_be_bytes();
-        let height_bytes = self.image.height.to_be_bytes();
-        #[rustfmt::skip]
-        let content = [
-            0x08,                   // bits per pixel
-            height_bytes[0], height_bytes[1], // image height
-            width_bytes[0], width_bytes[1],   // image width
-            0x03,                   // components (1 or 3)
-            0x01, 0x22, 0x00,       // 0x01=y component, sampling factor, quant. table
-            0x02, 0x11, 0x01,       // 0x02=Cb component, ...
-            0x03, 0x11, 0x01,       // 0x03=Cr component, ...
-        ]
-        .to_vec();
-        self.write_segment(SegmentMarker::StartOfFrame, &content)
+        self.write_segment(SegmentMarker::StartOfFrame, &[])
     }
 
     fn write_start_of_scan(&mut self) -> io::Result<()> {
@@ -147,49 +118,5 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
 
     fn write_image_data(&mut self) -> io::Result<()> {
         todo!("implement write image data");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{fs::File, io::BufReader};
-
-    use super::Encoder;
-    use crate::image::ppm_parser::{PPMParser, PPMTokenizer};
-
-    #[test]
-    fn test_write_file() {
-        let img_path = "src/image.ppm";
-        let file = File::open(img_path).expect("Failed to open file");
-        let reader = BufReader::new(file);
-        let image = PPMParser::parse(PPMTokenizer::new(reader)).unwrap();
-
-        let output_path = "output_image.jpg";
-        let mut output_file = File::create(output_path).expect("Failed to create output file");
-        let mut encoder: Encoder<std::fs::File, f32> = Encoder {
-            image: &image,
-            writer: &mut output_file,
-        };
-        encoder.encode().expect("Failed to encode image");
-    }
-
-    #[test]
-    fn test_write_string() {
-        let img_path = "src/image.ppm";
-        let file = File::open(img_path).expect("Failed to open file");
-        let reader = BufReader::new(file);
-        let image = PPMParser::parse(PPMTokenizer::new(reader)).unwrap();
-
-        let mut output_buffer = Vec::new();
-        let mut encoder: Encoder<std::vec::Vec<u8>, f32> = Encoder {
-            image: &image,
-            writer: &mut output_buffer,
-        };
-        encoder.encode().expect("Failed to encode image");
-        let output_string = String::from_utf8_lossy(&output_buffer);
-        for byte in &output_buffer {
-            print!("{:02x} ", byte);
-        }
-        panic!("{}", output_string);
     }
 }

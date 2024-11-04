@@ -56,7 +56,7 @@ impl<R: Read> Iterator for PPMTokenizer<R> {
     }
 }
 
-pub struct PPMParser {}
+struct PPMParser {}
 
 impl PPMParser {
     pub fn parse<R: Iterator<Item = String>>(mut tokenizer: R) -> Result<Image<f32>, String> {
