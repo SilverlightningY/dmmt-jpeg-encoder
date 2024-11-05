@@ -1,3 +1,5 @@
+mod encoder;
+
 use std::iter::Sum;
 use std::ops::AddAssign;
 use std::ops::Div;
