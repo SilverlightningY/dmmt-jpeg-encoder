@@ -5,7 +5,11 @@ use std::ops::AddAssign;
 use std::ops::Div;
 use std::ops::DivAssign;
 
+use clap::builder::PossibleValue;
+use clap::ValueEnum;
+
 mod ppm_parser;
+mod transformer;
 
 pub struct Image<T> {
     width: u16,
@@ -15,6 +19,53 @@ pub struct Image<T> {
     chroma_red: Vec<T>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ChromaSubsamplingPreset {
+    P444,
+    P422,
+    P420,
+}
+
+impl ValueEnum for ChromaSubsamplingPreset {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::P444, Self::P422, Self::P420]
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        match self {
+            Self::P444 => Some(PossibleValue::new("P444")),
+            Self::P422 => Some(PossibleValue::new("P422")),
+            Self::P420 => Some(PossibleValue::new("P420")),
+        }
+    }
+}
+
+impl ChromaSubsamplingPreset {
+    fn horizontal_rate(&self) -> u8 {
+        match self {
+            ChromaSubsamplingPreset::P444 => 1,
+            ChromaSubsamplingPreset::P422 => 2,
+            ChromaSubsamplingPreset::P420 => 2,
+        }
+    }
+
+    fn vertical_rate(&self) -> u8 {
+        match self {
+            ChromaSubsamplingPreset::P444 => 1,
+            ChromaSubsamplingPreset::P422 => 1,
+            ChromaSubsamplingPreset::P420 => 2,
+        }
+    }
+}
+
+struct OutputImage {
+    width: u16,
+    height: u16,
+    chroma_subsampling_preset: ChromaSubsamplingPreset,
+    bits_per_channel: u8,
+    subsampling_method: ChannelSubsamplingMethod,
+}
+
 #[derive(Clone, Copy)]
 pub enum ChannelIndex {
     Luma,
@@ -22,10 +73,23 @@ pub enum ChannelIndex {
     ChromaRed,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ChannelSubsamplingMethod {
     Skip,
     Average,
+}
+
+impl ValueEnum for ChannelSubsamplingMethod {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Skip, Self::Average]
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        match self {
+            Self::Skip => Some(PossibleValue::new("Skip")),
+            Self::Average => Some(PossibleValue::new("Average")),
+        }
+    }
 }
 
 struct ChannelSubsamplingInfo<'a, T> {
@@ -84,6 +148,12 @@ impl<'a, T> ChannelView<'a, T> {
             vertical_pos: -(vertical_rate as i16),
         }
     }
+}
+
+pub struct TransformationOptions {
+    pub chroma_subsampling_preset: ChromaSubsamplingPreset,
+    pub bits_per_channel: u8,
+    pub subsampling_method: ChannelSubsamplingMethod,
 }
 
 impl<T> Image<T> {

@@ -1,10 +1,12 @@
+use core::panic;
+use std::fmt::Display;
 use std::io;
 use std::io::Write;
 
-use super::Image;
+use super::OutputImage;
 
-pub struct Encoder<'a, T, I> {
-    image: &'a Image<I>,
+pub struct Encoder<'a, T> {
+    image: &'a OutputImage,
     writer: &'a mut T,
 }
 
@@ -57,8 +59,21 @@ impl AsBinaryRef for SegmentMarker {
     }
 }
 
-impl<'a, T: Write, I> Encoder<'a, T, I> {
-    pub fn new(image: &'a Image<I>, writer: &'a mut T) -> Encoder<'a, T, I> {
+impl Display for SegmentMarker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::HuffmanTable => write!(f, "Huffman Table"),
+            Self::QuantizationTable => write!(f, "Quantization Table"),
+            Self::ExifApplication => write!(f, "Exif Application"),
+            Self::JfifApplication => write!(f, "Jfif Application"),
+            Self::StartOfFrame => write!(f, "Start of Frame"),
+            Self::StartOfScan => write!(f, "Start of Scan"),
+        }
+    }
+}
+
+impl<'a, T: Write> Encoder<'a, T> {
+    pub fn new(image: &'a OutputImage, writer: &'a mut T) -> Encoder<'a, T> {
         Encoder { image, writer }
     }
 
@@ -76,9 +91,16 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
     }
 
     fn write_segment(&mut self, marker: SegmentMarker, content: &[u8]) -> io::Result<()> {
-        let marker = marker.as_binary_ref();
-        let segment_length = (marker.len() + content.len()).to_be_bytes();
-        self.writer.write_all(marker)?;
+        let marker_binary_ref = marker.as_binary_ref();
+        let segment_len = marker_binary_ref.len() + content.len();
+        if segment_len > u16::MAX as usize {
+            panic!(
+                "The length of the segment '{}' is greater than u16::MAX",
+                marker
+            );
+        }
+        let segment_length = (segment_len as u16).to_be_bytes();
+        self.writer.write_all(marker_binary_ref)?;
         self.writer.write_all(&segment_length)?;
         self.writer.write_all(content)?;
         Ok(())
