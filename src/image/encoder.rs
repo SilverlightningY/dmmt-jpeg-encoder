@@ -104,7 +104,7 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
         let width_bytes = self.image.width.to_be_bytes();
         let height_bytes = self.image.height.to_be_bytes();
         #[rustfmt::skip]
-        let content: Vec<u8> = [
+        let content = &[
             b'J', b'F', b'I', b'F', b'\0',// Identifier
             0x01, 0x02,             // Version
             0x00,                   // Density
@@ -112,8 +112,8 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
             height_bytes[0], height_bytes[1], // Y Density
             0,                      // X Thumbnail
             0                       // Y Thumbnail
-        ].to_vec();
-        self.write_segment(SegmentMarker::JfifApplication, &content)
+        ];
+        self.write_segment(SegmentMarker::JfifApplication, content)
     }
 
     fn write_luminance_quantization_table(&mut self) -> io::Result<()> {
@@ -128,7 +128,7 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
         let width_bytes = self.image.width.to_be_bytes();
         let height_bytes = self.image.height.to_be_bytes();
         #[rustfmt::skip]
-        let content = [
+        let content = &[
             0x08,                   // bits per pixel
             height_bytes[0], height_bytes[1], // image height
             width_bytes[0], width_bytes[1],   // image width
@@ -136,9 +136,8 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
             0x01, 0x22, 0x00,       // 0x01=y component, sampling factor, quant. table
             0x02, 0x11, 0x01,       // 0x02=Cb component, ...
             0x03, 0x11, 0x01,       // 0x03=Cr component, ...
-        ]
-        .to_vec();
-        self.write_segment(SegmentMarker::StartOfFrame, &content)
+        ];
+        self.write_segment(SegmentMarker::StartOfFrame, content)
     }
 
     fn write_start_of_scan(&mut self) -> io::Result<()> {
