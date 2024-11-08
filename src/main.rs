@@ -7,6 +7,6 @@ fn main() {
     let arguments = cli_parser.parse(args_os());
     match convert_ppm_to_jpeg(&arguments) {
         Ok(_) => println!("Conversion successful"),
-        Err(e) => eprintln!("Conversion failed because of: {:?}", e),
+        Err(e) => eprintln!("Conversion failed because of: {}", e),
     }
 }

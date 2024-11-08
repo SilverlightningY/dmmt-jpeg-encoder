@@ -12,7 +12,7 @@ pub struct BitWriter<'a, T: Write> {
 }
 
 impl<'a, T: Write> BitWriter<'a, T> {
-    fn new(writer: &'a mut T) -> BitWriter<'a, T> {
+    pub fn new(writer: &'a mut T) -> BitWriter<'a, T> {
         BitWriter {
             writer,
             buffer: 0,
@@ -29,7 +29,7 @@ impl<'a, T: Write> BitWriter<'a, T> {
     /// the underlying stream, but does not guarantee that
     /// all bits have been written, use flush to write
     /// any remaining bits.
-    fn write_bits(&mut self, buf: &[u8], count: usize) -> Result<usize, io::Error> {
+    pub fn write_bits(&mut self, buf: &[u8], count: usize) -> Result<usize, io::Error> {
         let mut remaining_bits_offset = 0;
         let mut bytes_written = 0;
         if self.buffer_space_used == 0 {

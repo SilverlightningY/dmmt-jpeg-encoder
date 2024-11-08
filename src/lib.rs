@@ -4,7 +4,7 @@ pub use cli::CLIParser;
 use image::{ChannelSubsamplingMethod, ChromaSubsamplingPreset};
 use std::error::Error;
 
-mod binary_stream;
+pub mod binary_stream;
 mod cli;
 mod color;
 mod image;
