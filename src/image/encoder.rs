@@ -158,37 +158,15 @@ mod tests {
 
     #[test]
     fn test_write_file() {
-        let img_path = "src/image.ppm";
-        let file = File::open(img_path).expect("Failed to open file");
-        let reader = BufReader::new(file);
-        let image = PPMParser::parse(PPMTokenizer::new(reader)).unwrap();
+        let string = "P3 3 2 255 255 0 0   0 255 0   0 0 255 255 255 0  255 0 255  0 255 255";
+        let image = PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
 
-        let output_path = "output_image.jpg";
+        let output_path = "tests/output_image.jpg";
         let mut output_file = File::create(output_path).expect("Failed to create output file");
         let mut encoder: Encoder<std::fs::File, f32> = Encoder {
             image: &image,
             writer: &mut output_file,
         };
         encoder.encode().expect("Failed to encode image");
-    }
-
-    #[test]
-    fn test_write_string() {
-        let img_path = "src/image.ppm";
-        let file = File::open(img_path).expect("Failed to open file");
-        let reader = BufReader::new(file);
-        let image = PPMParser::parse(PPMTokenizer::new(reader)).unwrap();
-
-        let mut output_buffer = Vec::new();
-        let mut encoder: Encoder<std::vec::Vec<u8>, f32> = Encoder {
-            image: &image,
-            writer: &mut output_buffer,
-        };
-        encoder.encode().expect("Failed to encode image");
-        let output_string = String::from_utf8_lossy(&output_buffer);
-        for byte in &output_buffer {
-            print!("{:02x} ", byte);
-        }
-        panic!("{}", output_string);
     }
 }
