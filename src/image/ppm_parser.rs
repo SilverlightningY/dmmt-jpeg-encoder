@@ -88,7 +88,7 @@ impl PPMParser {
             }
         }
 
-        if pixel.len() != 0 {
+        if !pixel.is_empty() {
             panic!("Invalid number of rgb values. Incomplete pixel")
         }
         if width as u32 * height as u32 != luma.len() as u32 {
