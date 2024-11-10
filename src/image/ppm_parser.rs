@@ -1,5 +1,6 @@
 use super::Image;
 use crate::color::{RGBColorFormat, RangeColorFormat, YCbCrColorFormat};
+use crate::error::Error;
 use std::io::Read;
 use std::str;
 
@@ -56,26 +57,62 @@ impl<R: Read> Iterator for PPMTokenizer<R> {
     }
 }
 
-struct PPMParser {}
+pub struct PPMParser;
+
+const P3_HEADER_TOKEN_NAME: &str = "P3 Header";
+const WIDTH_HEADER_TOKEN_NAME: &str = "Width Header";
+const HEIGHT_HEADER_TOKEN_NAME: &str = "Height Header";
+const MAX_VALUE_HEADER_TOKEN_NAME: &str = "Max Value Header";
+const COLOR_COMPONENT_VALUE_TOKEN_NAME: &str = "Color Component Value";
 
 impl PPMParser {
-    pub fn parse<R: Iterator<Item = String>>(mut tokenizer: R) -> Result<Image<f32>, String> {
+    pub fn parse<R: Iterator<Item = String>>(mut tokenizer: R) -> crate::Result<Image<f32>> {
         let mut luma: Vec<f32> = Vec::new();
         let mut chroma_blue: Vec<f32> = Vec::new();
         let mut chroma_red: Vec<f32> = Vec::new();
 
-        let header = tokenizer.next().unwrap();
+        let header = tokenizer
+            .next()
+            .ok_or(Error::PPMFileDoesNotContainRequiredToken(
+                P3_HEADER_TOKEN_NAME,
+            ))?;
         if header != "P3" {
-            return Err("Image File does not start with 'P3'".to_string());
+            return Err(Error::PPMFileDoesNotContainRequiredToken(
+                P3_HEADER_TOKEN_NAME,
+            ));
         }
-        let width = tokenizer.next().unwrap().parse().unwrap_or(0);
-        let height = tokenizer.next().unwrap().parse().unwrap_or(0);
-        let max = tokenizer.next().unwrap().parse().unwrap_or(0);
+
+        let width: u16 = tokenizer
+            .next()
+            .ok_or(Error::PPMFileDoesNotContainRequiredToken(
+                WIDTH_HEADER_TOKEN_NAME,
+            ))?
+            .parse()
+            .map_err(|_| Error::ParsingOfTokenFailed(WIDTH_HEADER_TOKEN_NAME))?;
+
+        let height: u16 = tokenizer
+            .next()
+            .ok_or(Error::PPMFileDoesNotContainRequiredToken(
+                HEIGHT_HEADER_TOKEN_NAME,
+            ))?
+            .parse()
+            .map_err(|_| Error::ParsingOfTokenFailed(HEIGHT_HEADER_TOKEN_NAME))?;
+        let max: u16 = tokenizer
+            .next()
+            .ok_or(Error::PPMFileDoesNotContainRequiredToken(
+                MAX_VALUE_HEADER_TOKEN_NAME,
+            ))?
+            .parse()
+            .map_err(|_| Error::ParsingOfTokenFailed(MAX_VALUE_HEADER_TOKEN_NAME))?;
 
         let mut pixel = Vec::with_capacity(3);
 
         for token in tokenizer {
-            pixel.push(token.parse().unwrap());
+            pixel.push(
+                token
+                    .parse()
+                    .map_err(|_| Error::ParsingOfTokenFailed(COLOR_COMPONENT_VALUE_TOKEN_NAME))?,
+            );
             if pixel.len() == 3 {
                 let col: RangeColorFormat<u16> =
                     RangeColorFormat::new(max, pixel[0], pixel[1], pixel[2]);
@@ -88,11 +125,12 @@ impl PPMParser {
             }
         }
 
-        if pixel.len() != 0 {
-            return Err("Invalid number of rgb values. Incomplete pixel".to_string());
+        if !pixel.is_empty() {
+            return Err(Error::IncompletePixelParsed(pixel.len()));
         }
-        if width as u32 * height as u32 != luma.len() as u32 {
-            return Err("Size of image in header does not match amount of pixels".to_string());
+
+        if width as usize * height as usize != luma.len() {
+            return Err(Error::MismatchOfSizeBetweenHeaderAndValues);
         }
 
         Ok(Image::<f32> {
@@ -108,6 +146,8 @@ impl PPMParser {
 #[cfg(test)]
 mod test {
     use std::{fs::File, io::BufReader};
+
+    use crate::error::Error;
 
     use super::{PPMParser, PPMTokenizer};
 
@@ -142,16 +182,27 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Invalid number of rgb values. Incomplete pixel")]
     fn incomplete_pixel() {
         let string = "P3\n3 2 255 0 0 255 0 0";
-        PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
+        if let Err(Error::IncompletePixelParsed(n)) =
+            PPMParser::parse(PPMTokenizer::new(string.as_bytes()))
+        {
+            if n != 2 {
+                panic!("Number of parsed pixels should be 2, but was {}", n);
+            }
+            return;
+        };
+        panic!("Incomplete pixel not detected");
     }
 
     #[test]
-    #[should_panic(expected = "Size of image in header does not match amount of pixels")]
     fn wrong_size() {
         let string = "P3\n3 2 255 0 0 255";
-        PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
+        if let Err(Error::MismatchOfSizeBetweenHeaderAndValues) =
+            PPMParser::parse(PPMTokenizer::new(string.as_bytes()))
+        {
+            return;
+        };
+        panic!("Mismatch of size in header and actual pixels was not detected!");
     }
 }

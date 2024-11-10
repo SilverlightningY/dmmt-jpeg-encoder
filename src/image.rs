@@ -1,5 +1,3 @@
-mod encoder;
-
 use std::iter::Sum;
 use std::ops::AddAssign;
 use std::ops::Div;
@@ -8,8 +6,11 @@ use std::ops::DivAssign;
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
 
-mod ppm_parser;
-mod transformer;
+use crate::Arguments;
+
+pub mod encoder;
+pub mod ppm_parser;
+pub mod transformer;
 
 pub struct Image<T> {
     width: u16,
@@ -58,7 +59,7 @@ impl ChromaSubsamplingPreset {
     }
 }
 
-struct OutputImage {
+pub struct OutputImage {
     width: u16,
     height: u16,
     chroma_subsampling_preset: ChromaSubsamplingPreset,
@@ -153,7 +154,17 @@ impl<'a, T> ChannelView<'a, T> {
 pub struct TransformationOptions {
     pub chroma_subsampling_preset: ChromaSubsamplingPreset,
     pub bits_per_channel: u8,
-    pub subsampling_method: ChannelSubsamplingMethod,
+    pub chroma_subsampling_method: ChannelSubsamplingMethod,
+}
+
+impl From<&Arguments> for TransformationOptions {
+    fn from(value: &Arguments) -> Self {
+        Self {
+            chroma_subsampling_preset: value.chroma_subsampling_preset,
+            bits_per_channel: value.bits_per_channel,
+            chroma_subsampling_method: value.chroma_subsampling_method,
+        }
+    }
 }
 
 impl<T> Image<T> {
