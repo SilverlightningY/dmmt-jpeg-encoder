@@ -2,10 +2,10 @@ use dmmt_jpeg_encoder::binary_stream::BitWriter;
 
 fn main() {
     let mut my_output: Vec<u8> = vec![];
-    let mut writer = BitWriter::new(&mut my_output);
+    let mut writer = BitWriter::new(&mut my_output, false);
 
     // 10 bit pattern: 1110001100 (write 1 mil times)
-    for _i in 0..1000000 {
+    for _ in 0..1_000_000 {
         // write 1 bit at a time
         writer.write_bits(&[0xFF], 1).expect("write failed");
         writer.write_bits(&[0xFF], 1).expect("write failed");

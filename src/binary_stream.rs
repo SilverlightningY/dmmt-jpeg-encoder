@@ -9,14 +9,19 @@ pub struct BitWriter<'a, T: Write> {
     buffer: u8,
     /// how many bits are waiting to be written
     buffer_space_used: u8,
+    /// buffer initialization val
+    init_val: u8,
 }
 
 impl<'a, T: Write> BitWriter<'a, T> {
-    pub fn new(writer: &'a mut T) -> BitWriter<'a, T> {
+    /// flush_bit: if 1, pad with 1's until byte border on flush (0 otherwise)
+    pub fn new(writer: &'a mut T, flush_bit: bool) -> BitWriter<'a, T> {
+        let ival = if flush_bit { 0xFF } else { 0x00 };
         BitWriter {
             writer,
-            buffer: 0,
+            buffer: ival,
             buffer_space_used: 0,
+            init_val: ival,
         }
     }
 
@@ -53,7 +58,7 @@ impl<'a, T: Write> BitWriter<'a, T> {
             if self.buffer_space_used == 8 {
                 bytes_written += self.writer.write(&[self.buffer])?;
                 self.buffer_space_used = 0;
-                self.buffer = 0; // depended upon in flush()
+                self.buffer = self.init_val; // depended upon in flush()
             }
         }
         Ok(bytes_written)
@@ -79,7 +84,7 @@ impl<'a, T: Write> Write for BitWriter<'a, T> {
     fn flush(&mut self) -> Result<(), io::Error> {
         if self.buffer_space_used != 0 {
             self.writer.write_all(&[self.buffer])?;
-            self.buffer = 0;
+            self.buffer = self.init_val;
             self.buffer_space_used = 0;
         }
         self.writer.flush()
@@ -94,7 +99,7 @@ mod test {
     #[test]
     fn byte_mode_test() {
         let mut my_output: Vec<u8> = vec![];
-        let mut writer = BitWriter::new(&mut my_output);
+        let mut writer = BitWriter::new(&mut my_output, false);
         let input = &[72, 65, 76, 76, 79];
         writer.write_all(input).expect("should not fail");
         writer.flush().expect("flushing should not fail");
@@ -109,7 +114,7 @@ mod test {
     #[test]
     fn bit_mode_test() {
         let mut my_output: Vec<u8> = vec![];
-        let mut writer = BitWriter::new(&mut my_output);
+        let mut writer = BitWriter::new(&mut my_output, false);
         // write 0x11000011 0x11110000 (in MSb notation)
         writer.write_bits(&[0xFF], 2).expect("ERR");
         writer.write_bits(&[0x00], 4).expect("ERR");
@@ -124,7 +129,7 @@ mod test {
     #[test]
     fn mixed_mode_test() {
         let mut my_output: Vec<u8> = vec![];
-        let mut writer = BitWriter::new(&mut my_output);
+        let mut writer = BitWriter::new(&mut my_output, false);
         // 0b111
         writer.write_bits(&[0xFF], 3).expect("ERR");
         // 0b11100000 00100000 01010000 100
@@ -135,5 +140,15 @@ mod test {
         assert_eq!(my_output[1], 32);
         assert_eq!(my_output[2], 80);
         assert_eq!(my_output[3], 128);
+    }
+
+    #[test]
+    fn one_padding_test() {
+        let mut my_output: Vec<u8> = vec![];
+        let mut writer = BitWriter::new(&mut my_output, true);
+        writer.write_bits(&[0x00], 3).expect("ERR");
+        writer.flush().expect("ERR");
+        assert_eq!(my_output.len(), 1);
+        assert_eq!(my_output[0], 31);
     }
 }
