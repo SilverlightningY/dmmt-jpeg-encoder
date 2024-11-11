@@ -1,6 +1,8 @@
 use std::io;
 use std::io::Write;
 
+use crate::logger;
+
 use super::Image;
 
 pub struct Encoder<'a, T, I> {
@@ -22,6 +24,7 @@ enum ControlMarker {
     EndOfFile,
 }
 
+#[derive(Debug)]
 enum SegmentMarker {
     HuffmanTable,
     QuantizationTable,
@@ -76,8 +79,10 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
     }
 
     fn write_segment(&mut self, marker: SegmentMarker, content: &[u8]) -> io::Result<()> {
+        log::info!("Writing {:?}", marker);
         let marker = marker.as_binary_ref();
         let segment_length = (marker.len() as u16 + content.len() as u16).to_be_bytes();
+        logger::log_segment(marker, content, &segment_length);
         self.writer.write_all(marker)?;
         self.writer.write_all(&segment_length)?;
         self.writer.write_all(content)?;
@@ -147,7 +152,7 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::BufReader};
+    use std::fs::File;
 
     use super::Encoder;
     use crate::image::ppm_parser::{PPMParser, PPMTokenizer};
@@ -157,7 +162,7 @@ mod tests {
         let string = "P3 3 2 255 255 0 0   0 255 0   0 0 255 255 255 0  255 0 255  0 255 255";
         let image = PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
 
-        let output_path = "tests/output_image.jpg";
+        let output_path = "out/output_image.jpg";
         let mut output_file = File::create(output_path).expect("Failed to create output file");
         let mut encoder: Encoder<std::fs::File, f32> = Encoder {
             image: &image,
