@@ -101,10 +101,6 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
         self.write_control_marker(ControlMarker::EndOfFile)
     }
 
-    fn write_exif_application_header(&mut self) -> io::Result<()> {
-        self.write_segment(SegmentMarker::ExifApplication, &[])
-    }
-
     fn write_jfif_application_header(&mut self) -> io::Result<()> {
         let width_bytes = self.image.width.to_be_bytes();
         let height_bytes = self.image.height.to_be_bytes();
