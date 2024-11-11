@@ -27,7 +27,6 @@ enum ControlMarker {
     EndOfFile,
 }
 
-#[derive(Debug)]
 enum SegmentMarker {
     HuffmanTable,
     QuantizationTable,
@@ -95,7 +94,7 @@ impl<'a, T: Write> Encoder<'a, T> {
     }
 
     fn write_segment(&mut self, marker: SegmentMarker, content: &[u8]) -> io::Result<()> {
-        log::info!("Writing {:?}", marker);
+        log::info!("Writing {}", marker);
         let marker_binary_ref = marker.as_binary_ref();
         let segment_len = marker_binary_ref.len() + content.len();
         if segment_len > u16::MAX as usize {
