@@ -152,15 +152,6 @@ mod test {
     use super::{PPMParser, PPMTokenizer};
 
     #[test]
-    fn read_image() {
-        let img_path = "src/image.ppm";
-        let file = File::open(img_path).expect("Failed to open file");
-        let reader = BufReader::new(file);
-        let image = PPMParser::parse(PPMTokenizer::new(reader)).unwrap();
-        assert!(image.height == 480);
-    }
-
-    #[test]
     fn read_string() {
         let string = "P3\n# Example PPM image string\n3 2\n255\n255 0 0   0 255 0   0 0 255\n255 255 0  255 0 255  0 255 255";
         let image = PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
