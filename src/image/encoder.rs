@@ -104,7 +104,7 @@ impl<'a, T: Write> Encoder<'a, T> {
             );
         }
         let segment_length = (segment_len as u16).to_be_bytes();
-        logger::log_segment(&marker_binary_ref, &content, &segment_length);
+        logger::log_segment(marker_binary_ref, content, &segment_length);
         self.writer.write_all(marker_binary_ref)?;
         self.writer.write_all(&segment_length)?;
         self.writer.write_all(content)?;
