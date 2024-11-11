@@ -155,15 +155,17 @@ impl<'a, T: Write> Encoder<'a, T> {
     fn write_start_of_frame(&mut self) -> Result<()> {
         let width_bytes = self.image.width.to_be_bytes();
         let height_bytes = self.image.height.to_be_bytes();
+        let subsampling = self.image.chroma_subsampling_preset;
+        let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (4 / subsampling.vertical_rate());
         #[rustfmt::skip]
         let content = &[
-            0x08,                   // bits per pixel
+            self.image.bits_per_channel,                   // bits per pixel
             height_bytes[0], height_bytes[1], // image height
             width_bytes[0], width_bytes[1],   // image width
             0x03,                   // components (1 or 3)
-            0x01, 0x22, 0x00,       // 0x01=y component, sampling factor, quant. table
-            0x02, 0x11, 0x01,       // 0x02=Cb component, ...
-            0x03, 0x11, 0x01,       // 0x03=Cr component, ...
+            0x01, 0x44, 0x00,       // 0x01=y component, sampling factor, quant. table
+            0x02, ratio, 0x01,       // 0x02=Cb component, ...
+            0x03, ratio, 0x01,       // 0x03=Cr component, ...
         ];
         self.write_segment(SegmentMarker::StartOfFrame, content)
             .map_err(|_| Error::FailedToWriteStartOfFrame)
@@ -183,7 +185,6 @@ impl<'a, T: Write> Encoder<'a, T> {
 mod tests {
     use super::Encoder;
     use crate::image::ChannelSubsamplingMethod::Skip;
-    use crate::image::ChromaSubsamplingPreset::P444;
     use crate::image::{
         ppm_parser::{PPMParser, PPMTokenizer},
         transformer::JpegTransformer,
@@ -196,7 +197,7 @@ mod tests {
         let string = "P3 3 2 255 255 0 0   0 255 0   0 0 255 255 255 0  255 0 255  0 255 255";
         let image = PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
         let options = TransformationOptions {
-            chroma_subsampling_preset: P444,
+            chroma_subsampling_preset: crate::image::ChromaSubsamplingPreset::P422,
             bits_per_channel: 8,
             chroma_subsampling_method: Skip,
         };
