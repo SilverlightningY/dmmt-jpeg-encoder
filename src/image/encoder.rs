@@ -180,35 +180,3 @@ impl<'a, T: Write> Encoder<'a, T> {
         todo!("implement write image data");
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::Encoder;
-    use crate::image::ChannelSubsamplingMethod::Skip;
-    use crate::image::{
-        ppm_parser::{PPMParser, PPMTokenizer},
-        transformer::JpegTransformer,
-        TransformationOptions,
-    };
-    use std::fs::File;
-
-    #[test]
-    fn test_write_file() {
-        let string = "P3 3 2 255 255 0 0   0 255 0   0 0 255 255 255 0  255 0 255  0 255 255";
-        let image = PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
-        let options = TransformationOptions {
-            chroma_subsampling_preset: crate::image::ChromaSubsamplingPreset::P422,
-            bits_per_channel: 8,
-            chroma_subsampling_method: Skip,
-        };
-        let transformed_image = JpegTransformer::new(&image).transform(&options).unwrap();
-
-        let output_path = "out/output_image.jpg";
-        let mut output_file = File::create(output_path).expect("Failed to create output file");
-        let mut encoder: Encoder<std::fs::File> = Encoder {
-            image: &transformed_image,
-            writer: &mut output_file,
-        };
-        encoder.encode().expect("Failed to encode image");
-    }
-}

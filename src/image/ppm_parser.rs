@@ -153,7 +153,7 @@ mod test {
 
     #[test]
     fn read_image() {
-        let img_path = "out/image.ppm";
+        let img_path = "tests/image.ppm";
         let file = File::open(img_path).expect("Failed to open file");
         let reader = BufReader::new(file);
         let image = PPMParser::parse(PPMTokenizer::new(reader)).unwrap();

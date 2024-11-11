@@ -2,7 +2,7 @@
 appenders:
   file:
     kind: file
-    path: "out/output.log"
+    path: "output.log"
     encoder:
       pattern: "{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {f}:{L} | {m}{n}"
 
