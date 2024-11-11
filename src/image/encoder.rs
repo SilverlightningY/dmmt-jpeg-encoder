@@ -1,10 +1,14 @@
+use crate::error::Error;
+use crate::Result;
+use core::panic;
+use std::fmt::Display;
 use std::io;
 use std::io::Write;
 
-use super::Image;
+use super::OutputImage;
 
-pub struct Encoder<'a, T, I> {
-    image: &'a Image<I>,
+pub struct Encoder<'a, T> {
+    image: &'a OutputImage,
     writer: &'a mut T,
 }
 
@@ -57,28 +61,48 @@ impl AsBinaryRef for SegmentMarker {
     }
 }
 
-impl<'a, T: Write, I> Encoder<'a, T, I> {
-    pub fn new(image: &'a Image<I>, writer: &'a mut T) -> Encoder<'a, T, I> {
+impl Display for SegmentMarker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::HuffmanTable => write!(f, "Huffman Table"),
+            Self::QuantizationTable => write!(f, "Quantization Table"),
+            Self::ExifApplication => write!(f, "Exif Application"),
+            Self::JfifApplication => write!(f, "Jfif Application"),
+            Self::StartOfFrame => write!(f, "Start of Frame"),
+            Self::StartOfScan => write!(f, "Start of Scan"),
+        }
+    }
+}
+
+impl<'a, T: Write> Encoder<'a, T> {
+    pub fn new(image: &'a OutputImage, writer: &'a mut T) -> Encoder<'a, T> {
         Encoder { image, writer }
     }
 
-    pub fn encode(&mut self) -> io::Result<()> {
+    pub fn encode(&mut self) -> Result<()> {
         self.write_start_of_file()?;
-        self.write_exif_application_header()?;
-        self.write_luminance_quantization_table()?;
-        self.write_chrominance_quantization_table()?;
-        self.write_start_of_frame()?;
+        self.write_jfif_application_header()?;
+        // self.write_luminance_quantization_table()?;
+        // self.write_chrominance_quantization_table()?;
+        // self.write_start_of_frame()?;
         // write huffman tables
-        self.write_start_of_scan()?;
-        self.write_image_data()?;
+        // self.write_start_of_scan()?;
+        // self.write_image_data()?;
         self.write_end_of_file()?;
         Ok(())
     }
 
     fn write_segment(&mut self, marker: SegmentMarker, content: &[u8]) -> io::Result<()> {
-        let marker = marker.as_binary_ref();
-        let segment_length = (marker.len() + content.len()).to_be_bytes();
-        self.writer.write_all(marker)?;
+        let marker_binary_ref = marker.as_binary_ref();
+        let segment_len = marker_binary_ref.len() + content.len();
+        if segment_len > u16::MAX as usize {
+            panic!(
+                "The length of the segment '{}' is greater than u16::MAX",
+                marker
+            );
+        }
+        let segment_length = (segment_len as u16).to_be_bytes();
+        self.writer.write_all(marker_binary_ref)?;
         self.writer.write_all(&segment_length)?;
         self.writer.write_all(content)?;
         Ok(())
@@ -88,35 +112,42 @@ impl<'a, T: Write, I> Encoder<'a, T, I> {
         self.writer.write_all(marker.as_binary_ref())
     }
 
-    fn write_start_of_file(&mut self) -> io::Result<()> {
+    fn write_start_of_file(&mut self) -> Result<()> {
         self.write_control_marker(ControlMarker::StartOfFile)
+            .map_err(|_| Error::FailedToWriteStartOfFile)
     }
 
-    fn write_end_of_file(&mut self) -> io::Result<()> {
+    fn write_end_of_file(&mut self) -> Result<()> {
         self.write_control_marker(ControlMarker::EndOfFile)
+            .map_err(|_| Error::FailedToWriteEndOfFile)
     }
 
-    fn write_exif_application_header(&mut self) -> io::Result<()> {
-        self.write_segment(SegmentMarker::ExifApplication, &[])
+    fn write_jfif_application_header(&mut self) -> Result<()> {
+        self.write_segment(SegmentMarker::JfifApplication, &[])
+            .map_err(|_| Error::FailedToWriteJfifApplicationHeader)
     }
 
-    fn write_luminance_quantization_table(&mut self) -> io::Result<()> {
+    fn write_luminance_quantization_table(&mut self) -> Result<()> {
         self.write_segment(SegmentMarker::QuantizationTable, &[])
+            .map_err(|_| Error::FailedToWriteLuminanceQuantizationTable)
     }
 
-    fn write_chrominance_quantization_table(&mut self) -> io::Result<()> {
+    fn write_chrominance_quantization_table(&mut self) -> Result<()> {
         self.write_segment(SegmentMarker::QuantizationTable, &[])
+            .map_err(|_| Error::FailedToWriteChrominanceQuantizationTable)
     }
 
-    fn write_start_of_frame(&mut self) -> io::Result<()> {
+    fn write_start_of_frame(&mut self) -> Result<()> {
         self.write_segment(SegmentMarker::StartOfFrame, &[])
+            .map_err(|_| Error::FailedToWriteStartOfFrame)
     }
 
-    fn write_start_of_scan(&mut self) -> io::Result<()> {
+    fn write_start_of_scan(&mut self) -> Result<()> {
         self.write_segment(SegmentMarker::StartOfScan, &[])
+            .map_err(|_| Error::FailedToWriteStartOfScan)
     }
 
-    fn write_image_data(&mut self) -> io::Result<()> {
+    fn write_image_data(&mut self) -> Result<()> {
         todo!("implement write image data");
     }
 }

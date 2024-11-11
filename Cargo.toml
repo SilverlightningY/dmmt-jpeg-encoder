@@ -3,13 +3,8 @@ name = "dmmt-jpeg-encoder"
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
-
-[[bin]]
-name="sheet2-1"
-path="src/sheet2_1.rs"
-
-[[bin]]
-name="dmmt-jpeg-encoder"
-path="src/main.rs"
+description = "A simple JPEG encoder, developed for educational purposes."
+default-run = "dmmt-jpeg-encoder"
 
 [dependencies]
+clap = { version = ">=4.5.20, <5.0.0", features = ["cargo"] }
