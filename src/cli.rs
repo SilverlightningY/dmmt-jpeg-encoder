@@ -35,8 +35,8 @@ impl CLIParser {
         let command = Self::register_input_file_argument(command);
         let command = Self::register_output_file_argument(command);
         let command = Self::register_bits_per_channel_argument(command);
-        let command = Self::register_chroma_subsampling_preset(command);
-        Self::register_chroma_subsampling_method(command)
+        let command = Self::register_chroma_subsampling_preset_argument(command);
+        Self::register_chroma_subsampling_method_argument(command)
     }
 
     fn register_input_file_argument(command: Command) -> Command {
@@ -51,11 +51,11 @@ impl CLIParser {
         command.arg(Self::create_bits_per_channel_argument())
     }
 
-    fn register_chroma_subsampling_preset(command: Command) -> Command {
+    fn register_chroma_subsampling_preset_argument(command: Command) -> Command {
         command.arg(Self::create_chroma_subsampling_preset_argument())
     }
 
-    fn register_chroma_subsampling_method(command: Command) -> Command {
+    fn register_chroma_subsampling_method_argument(command: Command) -> Command {
         command.arg(Self::create_chroma_subsampling_method_argument())
     }
 
@@ -70,17 +70,18 @@ impl CLIParser {
         Arg::new("input_file")
             .help("Path to PPM imput file")
             .value_parser(value_parser!(PathBuf))
+            .required(true)
     }
 
     fn create_output_file_argument() -> Arg {
         Arg::new("output_file")
             .help("Path to JPEG output file")
             .value_parser(value_parser!(PathBuf))
+            .required(true)
     }
 
     fn create_bits_per_channel_argument() -> Arg {
         arg!(bits_per_channel: -b --bits_per_channel <BITS> "Bits per color channel")
-            .required(false)
             .default_value("8")
             .value_parser([
                 PossibleValue::new("8"),
@@ -91,12 +92,11 @@ impl CLIParser {
 
     fn create_chroma_subsampling_preset_argument() -> Arg {
         arg!(chroma_subsampling_preset: -p --chroma_subsampling_preset <PRESET> "Chroma subsampling preset")
-            .required(false).default_value("P420").value_parser(value_parser!(ChromaSubsamplingPreset))
+            .default_value("P420").value_parser(value_parser!(ChromaSubsamplingPreset))
     }
 
     fn create_chroma_subsampling_method_argument() -> Arg {
         arg!(chroma_subsampling_method: -m --chroma_subsampling_method <METHOD> "Chroma subsampling method")
-            .required(false)
             .default_value("Average")
             .value_parser(value_parser!(ChannelSubsamplingMethod))
     }
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn parse_chroma_subsampling_preset_argument() {
         let command = Command::new("test");
-        let command = CLIParser::register_chroma_subsampling_preset(command);
+        let command = CLIParser::register_chroma_subsampling_preset_argument(command);
         let matches = command.get_matches_from(vec![
             PROGRAM_NAME_ARGUMENT,
             "--chroma_subsampling_preset",
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn parse_chroma_subsampling_method_argument() {
         let command = Command::new("test");
-        let command = CLIParser::register_chroma_subsampling_method(command);
+        let command = CLIParser::register_chroma_subsampling_method_argument(command);
         let matches = command.get_matches_from(vec![
             PROGRAM_NAME_ARGUMENT,
             "--chroma_subsampling_method",

@@ -85,7 +85,7 @@ impl<'a, T: Write> Encoder<'a, T> {
         self.write_jfif_application_header()?;
         // self.write_luminance_quantization_table()?;
         // self.write_chrominance_quantization_table()?;
-        // self.write_start_of_frame()?;
+        self.write_start_of_frame()?;
         // write huffman tables
         // self.write_start_of_scan()?;
         // self.write_image_data()?;
