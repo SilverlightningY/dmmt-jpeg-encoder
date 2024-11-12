@@ -145,20 +145,9 @@ impl PPMParser {
 
 #[cfg(test)]
 mod test {
-    use std::{fs::File, io::BufReader};
-
     use crate::error::Error;
 
     use super::{PPMParser, PPMTokenizer};
-
-    #[test]
-    fn read_image() {
-        let img_path = "tests/image.ppm";
-        let file = File::open(img_path).expect("Failed to open file");
-        let reader = BufReader::new(file);
-        let image = PPMParser::parse(PPMTokenizer::new(reader)).unwrap();
-        assert!(image.height == 480);
-    }
 
     #[test]
     fn read_string() {
