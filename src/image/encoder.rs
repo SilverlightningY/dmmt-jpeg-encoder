@@ -6,6 +6,7 @@ use std::io;
 use std::io::Write;
 
 use super::OutputImage;
+use crate::logger;
 
 pub struct Encoder<'a, T> {
     image: &'a OutputImage,
@@ -93,6 +94,7 @@ impl<'a, T: Write> Encoder<'a, T> {
     }
 
     fn write_segment(&mut self, marker: SegmentMarker, content: &[u8]) -> io::Result<()> {
+        log::info!("Writing {}", marker);
         let marker_binary_ref = marker.as_binary_ref();
         let segment_len = marker_binary_ref.len() + content.len();
         if segment_len > u16::MAX as usize {
@@ -102,6 +104,7 @@ impl<'a, T: Write> Encoder<'a, T> {
             );
         }
         let segment_length = (segment_len as u16).to_be_bytes();
+        logger::log_segment(marker_binary_ref, content, &segment_length);
         self.writer.write_all(marker_binary_ref)?;
         self.writer.write_all(&segment_length)?;
         self.writer.write_all(content)?;
@@ -123,7 +126,19 @@ impl<'a, T: Write> Encoder<'a, T> {
     }
 
     fn write_jfif_application_header(&mut self) -> Result<()> {
-        self.write_segment(SegmentMarker::JfifApplication, &[])
+        let width_bytes = self.image.width.to_be_bytes();
+        let height_bytes = self.image.height.to_be_bytes();
+        #[rustfmt::skip]
+        let content = &[
+            b'J', b'F', b'I', b'F', b'\0',// Identifier
+            0x01, 0x02,             // Version
+            0x00,                   // Density
+            width_bytes[0], width_bytes[1], // X Density
+            height_bytes[0], height_bytes[1], // Y Density
+            0,                      // X Thumbnail
+            0                       // Y Thumbnail
+        ];
+        self.write_segment(SegmentMarker::JfifApplication, content)
             .map_err(|_| Error::FailedToWriteJfifApplicationHeader)
     }
 
@@ -138,7 +153,21 @@ impl<'a, T: Write> Encoder<'a, T> {
     }
 
     fn write_start_of_frame(&mut self) -> Result<()> {
-        self.write_segment(SegmentMarker::StartOfFrame, &[])
+        let width_bytes = self.image.width.to_be_bytes();
+        let height_bytes = self.image.height.to_be_bytes();
+        let subsampling = self.image.chroma_subsampling_preset;
+        let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (4 / subsampling.vertical_rate());
+        #[rustfmt::skip]
+        let content = &[
+            self.image.bits_per_channel,                   // bits per pixel
+            height_bytes[0], height_bytes[1], // image height
+            width_bytes[0], width_bytes[1],   // image width
+            0x03,                   // components (1 or 3)
+            0x01, 0x44, 0x00,       // 0x01=y component, sampling factor, quant. table
+            0x02, ratio, 0x01,       // 0x02=Cb component, ...
+            0x03, ratio, 0x01,       // 0x03=Cr component, ...
+        ];
+        self.write_segment(SegmentMarker::StartOfFrame, content)
             .map_err(|_| Error::FailedToWriteStartOfFrame)
     }
 
