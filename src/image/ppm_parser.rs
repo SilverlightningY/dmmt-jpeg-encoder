@@ -145,8 +145,6 @@ impl PPMParser {
 
 #[cfg(test)]
 mod test {
-    use std::{fs::File, io::BufReader};
-
     use crate::error::Error;
 
     use super::{PPMParser, PPMTokenizer};

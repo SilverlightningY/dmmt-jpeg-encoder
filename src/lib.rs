@@ -18,6 +18,7 @@ mod cli;
 mod color;
 mod error;
 mod image;
+mod logger;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 

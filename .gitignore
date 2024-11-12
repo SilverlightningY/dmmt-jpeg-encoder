@@ -23,4 +23,9 @@ Cargo.lock
 # Added by cargo
 
 /target
+
+# Test artifacts
 tests/result.jpg
+
+# Any log file
+*.log
