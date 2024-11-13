@@ -156,7 +156,7 @@ impl<'a, T: Write> Encoder<'a, T> {
         let width_bytes = self.image.width.to_be_bytes();
         let height_bytes = self.image.height.to_be_bytes();
         let subsampling = self.image.chroma_subsampling_preset;
-        let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (4 / subsampling.vertical_rate());
+        let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (2 / subsampling.vertical_rate());
         #[rustfmt::skip]
         let content = &[
             self.image.bits_per_channel,                   // bits per pixel
