@@ -163,7 +163,7 @@ impl<'a, T: Write> Encoder<'a, T> {
             height_bytes[0], height_bytes[1], // image height
             width_bytes[0], width_bytes[1],   // image width
             0x03,                   // components (1 or 3)
-            0x01, 0x44, 0x00,       // 0x01=y component, sampling factor, quant. table
+            0x01, 0x42, 0x00,       // 0x01=y component, sampling factor, quant. table
             0x02, ratio, 0x01,       // 0x02=Cb component, ...
             0x03, ratio, 0x01,       // 0x03=Cr component, ...
         ];
