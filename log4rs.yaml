@@ -1,0 +1,18 @@
+# log4rs.yaml
+appenders:
+  file:
+    kind: file
+    path: "output.log"
+    encoder:
+      pattern: "{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {f}:{L} | {m}{n}"
+
+  console:
+    kind: console
+    encoder:
+      pattern: "{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {f}:{L} | {m}{n}"
+
+root:
+  level: info
+  appenders:
+    - file
+    # - console
