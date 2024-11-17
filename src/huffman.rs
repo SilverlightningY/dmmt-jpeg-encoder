@@ -20,6 +20,7 @@ struct Node {
 pub struct HuffmanTree {
     nodes: Vec<Node>,
     root_index: usize,
+    smallest_node_index: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -53,9 +54,20 @@ pub struct HuffmanCoder<'a> {
 // WARNING: replacing 1* has to take place AFTER swapping (two separate calls)
 fn correct_node(node: Node, tree: &mut HuffmanTree, right_path: bool) -> u32 {
     match node.kind {
-        NodeKind::Leaf { symbol } => {
+        NodeKind::Leaf { symbol: _ } => {
             if right_path {
-                tree.nodes[node.index].kind = NodeKind::OneStar { symbol };
+                // switch smallest node index into this position
+                let smallest = tree.nodes[tree.smallest_node_index];
+                tree.nodes[tree.smallest_node_index] = node;
+                tree.nodes[node.index] = smallest;
+                match tree.nodes[node.index].kind {
+                    NodeKind::Leaf { symbol } => {
+                        tree.nodes[node.index].kind = NodeKind::OneStar { symbol };
+                    }
+                    _ => {
+                        panic!("leaf with smallest frequency not a leaf?");
+                    }
+                };
                 return 2;
             }
             1
@@ -81,6 +93,9 @@ impl HuffmanTree {
     pub fn new(symbols_and_frequencies: &[(u32, u32)]) -> HuffmanTree {
         let mut heap = BinaryHeap::new();
         let mut nodes: Vec<Node> = vec![];
+
+        let mut smallest_node_index = 0;
+        let mut smallest_frequency = 0xFFFFFFFF;
         // create the initial nodeset
         for fs in symbols_and_frequencies.iter() {
             let frequency = fs.1;
@@ -92,6 +107,10 @@ impl HuffmanTree {
             };
             heap.push(Reverse(node));
             nodes.push(node);
+            if frequency < smallest_frequency {
+                smallest_frequency = frequency;
+                smallest_node_index = nodes.len() - 1;
+            }
         }
         // merge nodes until none left
         while heap.len() > 1 {
@@ -109,7 +128,11 @@ impl HuffmanTree {
             nodes.push(node);
         }
         let root_index = heap.pop().unwrap().0.index;
-        HuffmanTree { nodes, root_index }
+        HuffmanTree {
+            nodes,
+            root_index,
+            smallest_node_index,
+        }
     }
 
     pub fn correct_ordering(&mut self) {
@@ -238,18 +261,15 @@ impl HuffmanCoder<'_> {
             let take_right = buffer[0] & ((1 << 7) >> atbit) > 0;
             let mut node = self.tree.nodes[current_index];
             match node.kind {
-                NodeKind::Leaf { symbol: _ } => {
-                    panic!("this branch is not reachable");
-                }
-                NodeKind::OneStar { symbol: _ } => {
-                    panic!("this branch is not reachable");
-                }
                 NodeKind::Inner { left, right } => {
                     if take_right {
                         current_index = right;
                     } else {
                         current_index = left;
                     }
+                }
+                _ => {
+                    panic!("unreachable, only one symbol in tree")
                 }
             };
             node = self.tree.nodes[current_index];
