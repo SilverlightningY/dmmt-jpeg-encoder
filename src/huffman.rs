@@ -1,8 +1,9 @@
 use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd, Reverse};
 use std::collections::BinaryHeap;
 use std::fmt;
-use std::io::Read;
-use std::iter::repeat;
+use std::io::{Read, Write};
+
+use crate::binary_stream::BitWriter;
 
 #[derive(Clone, Copy)]
 enum NodeKind {
@@ -52,39 +53,48 @@ pub struct HuffmanCoder<'a> {
 // -> the subtree with more depth is always the right child after this call
 // -> if called with right_path=true it will also replace the 1* pattern
 // WARNING: replacing 1* has to take place AFTER swapping (two separate calls)
-fn correct_node(node: Node, tree: &mut HuffmanTree, right_path: bool) -> u32 {
+fn move_longer_subtree_to_the_right(
+    tree: &mut HuffmanTree,
+    current_node_index: usize,
+    prevent_one_star_pattern_on_right_subtree: bool,
+) -> u32 {
+    let node = tree.nodes[current_node_index];
     match node.kind {
         NodeKind::Leaf { symbol: _ } => {
-            if right_path {
+            if prevent_one_star_pattern_on_right_subtree {
                 // switch smallest node index into this position
                 let smallest = tree.nodes[tree.smallest_node_index];
                 tree.nodes[tree.smallest_node_index] = node;
                 tree.nodes[node.index] = smallest;
-                match tree.nodes[node.index].kind {
-                    NodeKind::Leaf { symbol } => {
-                        tree.nodes[node.index].kind = NodeKind::OneStar { symbol };
-                    }
-                    _ => {
-                        panic!("leaf with smallest frequency not a leaf?");
-                    }
-                };
+                if let NodeKind::Leaf { symbol } = tree.nodes[node.index].kind {
+                    tree.nodes[node.index].kind = NodeKind::OneStar { symbol };
+                } else {
+                    panic!("Leaf with smallest frequency not a leaf?");
+                }
                 return 2;
             }
             1
         }
         NodeKind::OneStar { symbol: _ } => 2,
-        NodeKind::Inner { left, right } => {
-            let res_left = correct_node(tree.nodes[left], tree, false);
-            let res_right = correct_node(tree.nodes[right], tree, right_path);
+        NodeKind::Inner {
+            left: left_node_index,
+            right: right_node_index,
+        } => {
+            let left_tree_depth = move_longer_subtree_to_the_right(tree, left_node_index, false);
+            let right_tree_depth = move_longer_subtree_to_the_right(
+                tree,
+                right_node_index,
+                prevent_one_star_pattern_on_right_subtree,
+            );
             // if wrong order, swap
-            if res_left > res_right {
+            if left_tree_depth > right_tree_depth {
                 tree.nodes[node.index].kind = NodeKind::Inner {
-                    left: right,
-                    right: left,
+                    left: right_node_index,
+                    right: left_node_index,
                 };
-                return res_left + 1;
+                return left_tree_depth + 1;
             }
-            res_right + 1
+            right_tree_depth + 1
         }
     }
 }
@@ -109,7 +119,7 @@ impl HuffmanTree {
             nodes.push(node);
             if frequency < smallest_frequency {
                 smallest_frequency = frequency;
-                smallest_node_index = nodes.len() - 1;
+                smallest_node_index = node.index;
             }
         }
         // merge nodes until none left
@@ -136,10 +146,11 @@ impl HuffmanTree {
     }
 
     pub fn correct_ordering(&mut self) {
-        correct_node(self.nodes[self.root_index], self, false);
+        move_longer_subtree_to_the_right(self, self.root_index, false);
     }
+
     pub fn replace_onestar(&mut self) {
-        correct_node(self.nodes[self.root_index], self, true);
+        move_longer_subtree_to_the_right(self, self.root_index, true);
     }
 }
 
@@ -225,10 +236,10 @@ impl HuffmanCoder<'_> {
         }
     }
 
-    pub fn encode_sequence<T: std::io::Write>(
+    pub fn encode_sequence<T: Write>(
         &self,
         seq: &[u32],
-        bitwriter: &mut super::binary_stream::BitWriter<T>,
+        bitwriter: &mut BitWriter<T>,
     ) -> Result<(), CodingError> {
         for s in seq.iter() {
             let table_entry: TableEntry = self.encoding_table[self
@@ -283,7 +294,7 @@ impl HuffmanCoder<'_> {
                     atbit += 1;
                     current_index = self.tree.root_index;
                 }
-                NodeKind::Inner { left: _, right: _ } => {}
+                _ => {}
             };
             atbit += 1;
             if atbit >= 8 {
@@ -296,6 +307,9 @@ impl HuffmanCoder<'_> {
         Ok(())
     }
 }
+
+const BOX_DRAWINGS_DOUBLE_HORIZONTAL: &str = "═";
+const SPACE: &str = " ";
 
 // Node & Tree visualization
 impl Node {
@@ -317,18 +331,17 @@ impl Node {
                 let right_box: Vec<String> = node_right.get_string(tree);
                 let left_width = left_box[0].chars().count();
                 let right_width = right_box[0].chars().count();
-                let mut result: Vec<String> = vec![];
+                let mut result: Vec<String> = Vec::new();
 
-                let x_str = |x, s| repeat(s).take(x).collect::<String>();
                 result.push(format!(
                     "{}•{}",
-                    x_str(left_width, " "),
-                    x_str(right_width, " ")
+                    SPACE.repeat(left_width),
+                    SPACE.repeat(right_width)
                 ));
                 result.push(format!(
                     "{}║{}",
-                    x_str(left_width, " "),
-                    x_str(right_width, " ")
+                    SPACE.repeat(left_width),
+                    SPACE.repeat(right_width)
                 ));
 
                 let left_pos = (left_box[0].chars().position(|c| c != ' ').unwrap() * 2
@@ -339,17 +352,17 @@ impl Node {
                     / 2;
                 result.push(format!(
                     "{}╔{}╩{}╗{}",
-                    x_str(left_pos, " "),
-                    x_str(left_width - left_pos - 1, "═"),
-                    x_str(right_pos, "═"),
-                    x_str(right_width - right_pos - 1, " ")
+                    SPACE.repeat(left_pos),
+                    BOX_DRAWINGS_DOUBLE_HORIZONTAL.repeat(left_width - left_pos - 1),
+                    BOX_DRAWINGS_DOUBLE_HORIZONTAL.repeat(right_pos),
+                    SPACE.repeat(right_width - right_pos - 1)
                 ));
 
                 let left_depth = left_box.len();
                 let right_depth = right_box.len();
                 for i in 0..std::cmp::max(left_depth, right_depth) {
-                    let mut left_str = x_str(left_width, " ");
-                    let mut right_str = x_str(right_width, " ");
+                    let mut left_str = SPACE.repeat(left_width);
+                    let mut right_str = SPACE.repeat(right_width);
                     if i < left_depth {
                         left_str = left_box[i].clone();
                     }

@@ -16,15 +16,15 @@ fn main() -> Result<(), CodingError> {
     let sequence_to_encode = vec![3, 3, 3, 2, 1, 4, 5, 3, 3, 3];
 
     let coder = HuffmanCoder::new(&tree);
-    let mut my_output: Vec<u8> = vec![];
-    let mut writer = BitWriter::new(&mut my_output, true);
+    let mut encoded_buffer: Vec<u8> = Vec::new();
+    let mut writer = BitWriter::new(&mut encoded_buffer, true);
     coder.encode_sequence(&sequence_to_encode, &mut writer)?;
     let _ = writer.flush();
-    println!("encoding sequence\n{:?}", sequence_to_encode);
-    println!("encoded_sequence\n{:?}", my_output);
+    println!("sequence to encode\n{:?}", sequence_to_encode);
+    println!("encoded sequence\n{:?}", encoded_buffer);
 
-    let mut my_decoded: Vec<u32> = vec![];
-    coder.decode_sequence(my_output.as_slice(), &mut my_decoded)?;
-    println!("decoded sequence\n{:?}", my_decoded);
+    let mut decoded_buffer: Vec<u32> = Vec::new();
+    coder.decode_sequence(encoded_buffer.as_slice(), &mut decoded_buffer)?;
+    println!("decoded sequence\n{:?}", decoded_buffer);
     Ok(())
 }
