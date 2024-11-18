@@ -4,16 +4,16 @@ use std::io::Write;
 
 fn main() -> Result<(), CodingError> {
     // symbol-frequency pairs
-    let syms_and_freqs = vec![(0, 10), (1, 2), (2, 24), (3, 340), (4, 10), (5, 11)];
+    let syms_and_freqs = [(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12)];
 
     let mut tree = HuffmanTree::new(&syms_and_freqs);
     println!("huffman tree\n{}", tree);
-    tree.correct_ordering();
+    tree.reorder_right_growing();
     println!("right-growing huffman\n{}", tree);
     tree.replace_onestar();
     println!("right-growing huffman without 1*\n{}", tree);
 
-    let sequence_to_encode = vec![3, 3, 3, 2, 1, 4, 5, 3, 3, 3];
+    let sequence_to_encode = [3, 3, 3, 2, 1, 4, 5, 3, 3, 3];
 
     let coder = HuffmanCoder::new(&tree);
     let mut encoded_buffer: Vec<u8> = Vec::new();
