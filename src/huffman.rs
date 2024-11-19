@@ -14,14 +14,14 @@ enum NodeKind {
 
 #[derive(Clone, Copy)]
 struct Node {
-    frequency: u32,
+    frequency: usize,
     index: usize,
     kind: NodeKind,
 }
 pub struct HuffmanTree {
     nodes: Vec<Node>,
     root_index: usize,
-    smallest_node_index: usize,
+    least_frequent_symbol_node_index: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -63,10 +63,11 @@ fn move_longer_subtree_to_the_right(
         NodeKind::Leaf { symbol: _ } => {
             if prevent_one_star_pattern_on_right_subtree {
                 // switch smallest node index into this position
-                let smallest = tree.nodes[tree.smallest_node_index];
-                tree.nodes[tree.smallest_node_index] = node;
-                tree.nodes[node.index] = smallest;
-                if let NodeKind::Leaf { symbol } = tree.nodes[node.index].kind {
+                tree.nodes[current_node_index].index = tree.least_frequent_symbol_node_index;
+                tree.nodes[tree.least_frequent_symbol_node_index].index = current_node_index;
+                tree.nodes
+                    .swap(current_node_index, tree.least_frequent_symbol_node_index);
+                if let NodeKind::Leaf { symbol } = tree.nodes[current_node_index].kind {
                     tree.nodes[node.index].kind = NodeKind::OneStar { symbol };
                 } else {
                     panic!("Leaf with smallest frequency not a leaf?");
@@ -100,12 +101,12 @@ fn move_longer_subtree_to_the_right(
 }
 
 impl HuffmanTree {
-    pub fn new(symbols_and_frequencies: &[(u32, u32)]) -> HuffmanTree {
+    pub fn new(symbols_and_frequencies: &[(u32, usize)]) -> HuffmanTree {
         let mut heap = BinaryHeap::new();
         let mut nodes: Vec<Node> = vec![];
 
-        let mut smallest_node_index = 0;
-        let mut smallest_frequency = 0xFFFFFFFF;
+        let mut least_frequent_symbol_node_index = 0;
+        let mut smallest_frequency = usize::MAX;
         // create the initial nodeset
         for &(symbol, frequency) in symbols_and_frequencies.iter() {
             let node = Node {
@@ -117,7 +118,7 @@ impl HuffmanTree {
             nodes.push(node);
             if frequency < smallest_frequency {
                 smallest_frequency = frequency;
-                smallest_node_index = node.index;
+                least_frequent_symbol_node_index = node.index;
             }
         }
         // merge nodes until none left
@@ -139,7 +140,7 @@ impl HuffmanTree {
         HuffmanTree {
             nodes,
             root_index,
-            smallest_node_index,
+            least_frequent_symbol_node_index,
         }
     }
 
@@ -191,10 +192,11 @@ impl Max32BitPattern {
 
 fn fill_table(
     table: &mut Vec<TableEntry>,
-    node: Node,
     tree: &HuffmanTree,
+    current_node_index: usize,
     current_pattern: Max32BitPattern,
 ) {
+    let node = tree.nodes[current_node_index];
     match node.kind {
         NodeKind::Leaf { symbol } => {
             table.push(TableEntry {
@@ -207,26 +209,23 @@ fn fill_table(
             table.push(TableEntry { pattern: p, symbol });
         }
         NodeKind::Inner { left, right } => {
-            let left_node = tree.nodes[left];
-            let right_node = tree.nodes[right];
-            fill_table(table, left_node, tree, current_pattern.push(false));
-            fill_table(table, right_node, tree, current_pattern.push(true));
+            fill_table(table, tree, left, current_pattern.push(false));
+            fill_table(table, tree, right, current_pattern.push(true));
         }
     }
 }
 
 impl HuffmanCoder<'_> {
     pub fn new(tree: &HuffmanTree) -> HuffmanCoder {
-        let mut table = vec![];
+        let mut encoding_table = Vec::new();
 
         fill_table(
-            &mut table,
-            tree.nodes[tree.root_index],
+            &mut encoding_table,
             tree,
+            tree.root_index,
             Max32BitPattern::new(),
         );
 
-        let mut encoding_table = table.clone();
         encoding_table.sort_by(|a, b| a.symbol.cmp(&b.symbol));
         HuffmanCoder {
             encoding_table,
@@ -256,7 +255,7 @@ impl HuffmanCoder<'_> {
 
     pub fn decode_sequence<I: Read>(
         &self,
-        mut seq: I,
+        seq: &mut I,
         out: &mut Vec<u32>,
     ) -> Result<(), CodingError> {
         // tree traversal decode -> this is here for debugging not for speed
@@ -387,29 +386,32 @@ impl fmt::Display for HuffmanTree {
 
 #[cfg(test)]
 mod test {
-    use super::{HuffmanTree, NodeKind};
+    use std::{collections::HashMap, io::Write};
+
+    use crate::{binary_stream::BitWriter, huffman::CodingError};
+
+    use super::{HuffmanCoder, HuffmanTree, Max32BitPattern, NodeKind};
 
     fn calculate_depth_for_each_symbol(tree: &HuffmanTree) -> Vec<usize> {
         let mut return_value = vec![usize::default(); tree.nodes.len()];
         return_value[tree.root_index] = 1;
-        for _ in 0..return_value.len() {
-            for (node_index, node) in tree.nodes.iter().enumerate() {
-                if return_value[node_index] == usize::default() {
-                    continue;
+        let mut node_index_stack = vec![tree.root_index];
+        while let Some(index) = node_index_stack.pop() {
+            let current_node = tree.nodes[index];
+            match current_node.kind {
+                NodeKind::Inner {
+                    left: left_node_index,
+                    right: right_node_index,
+                } => {
+                    return_value[left_node_index] = return_value[index] + 1;
+                    return_value[right_node_index] = return_value[index] + 1;
+                    node_index_stack.push(left_node_index);
+                    node_index_stack.push(right_node_index);
                 }
-                match node.kind {
-                    NodeKind::Inner {
-                        left: left_node_index,
-                        right: right_node_index,
-                    } => {
-                        return_value[left_node_index] = return_value[node_index] + 1;
-                        return_value[right_node_index] = return_value[node_index] + 1;
-                    }
-                    NodeKind::OneStar { symbol: _ } => {
-                        return_value[node_index] += 1;
-                    }
-                    NodeKind::Leaf { symbol: _ } => continue,
+                NodeKind::OneStar { symbol: _ } => {
+                    return_value[index] += 1;
                 }
+                NodeKind::Leaf { symbol: _ } => continue,
             }
         }
 
@@ -445,15 +447,19 @@ mod test {
         depths[max_depth_index] - depths[node_index] + 1
     }
 
+    const SYMBOLS_AND_FREQUENCIES_EVEN_LEN: &[(u32, usize); 6] =
+        &[(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12)];
+    const SYMBOLS_AND_FREQUENCIES_ODD_LEN: &[(u32, usize); 7] =
+        &[(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
+
     #[test]
     fn test_calculate_depth_for_each_symbol_even_len() {
-        let symbols_and_frequencies = [(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12)];
-        let tree = HuffmanTree::new(&symbols_and_frequencies);
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_EVEN_LEN);
         let symbol_depths = calculate_depth_for_each_symbol(&tree);
         let expected_symbol_depths = [3, 5, 4, 5, 3, 3, 4, 3, 2, 2, 1];
-        for (index, depth) in symbol_depths.iter().enumerate() {
+        for (index, &depth) in symbol_depths.iter().enumerate() {
             assert_eq!(
-                *depth, expected_symbol_depths[index],
+                depth, expected_symbol_depths[index],
                 "Depth at index {} does not match",
                 index
             );
@@ -462,10 +468,40 @@ mod test {
 
     #[test]
     fn test_calculate_depth_for_each_symbol_odd_len() {
-        let symbols_and_frequencies = [(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
-        let tree = HuffmanTree::new(&symbols_and_frequencies);
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
         let symbol_depths = calculate_depth_for_each_symbol(&tree);
         let expected_symbol_depths = [3, 5, 4, 5, 3, 4, 4, 4, 3, 3, 2, 2, 1];
+        for (index, &depth) in symbol_depths.iter().enumerate() {
+            assert_eq!(
+                depth, expected_symbol_depths[index],
+                "Depth at index {} does not match",
+                index
+            );
+        }
+    }
+
+    #[test]
+    fn test_calculate_depth_for_each_symbol_with_right_growing_tree() {
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        tree.reorder_right_growing();
+        let symbol_depths = calculate_depth_for_each_symbol(&tree);
+        let expected_symbol_depths = [3, 5, 4, 5, 3, 4, 4, 4, 3, 3, 2, 2, 1];
+        for (index, &depth) in symbol_depths.iter().enumerate() {
+            assert_eq!(
+                depth, expected_symbol_depths[index],
+                "Depth at index {} does not match",
+                index
+            );
+        }
+    }
+
+    #[test]
+    fn test_calculate_depth_for_each_symbol_with_right_growing_and_onestar_pattern_replaced_tree() {
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        tree.reorder_right_growing();
+        tree.replace_onestar();
+        let symbol_depths = calculate_depth_for_each_symbol(&tree);
+        let expected_symbol_depths = [3, 5, 4, 6, 3, 4, 4, 4, 3, 3, 2, 2, 1];
         for (index, depth) in symbol_depths.iter().enumerate() {
             assert_eq!(
                 *depth, expected_symbol_depths[index],
@@ -476,9 +512,29 @@ mod test {
     }
 
     #[test]
+    fn test_find_first_occurence_of_least_frequent_symbol_node_index() {
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        assert_eq!(
+            tree.least_frequent_symbol_node_index, 1,
+            "First occurence of node with the smallest frequency should be selected."
+        );
+    }
+
+    #[test]
+    fn test_find_first_occurence_of_least_frequent_symbol_node_index_after_onestar_pattern_replacement(
+    ) {
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        tree.reorder_right_growing();
+        tree.replace_onestar();
+        assert_eq!(
+            tree.least_frequent_symbol_node_index, 1,
+            "First occurence of node with the smallest frequency should be selected."
+        );
+    }
+
+    #[test]
     fn test_get_max_depth_under_node() {
-        let symbols_and_frequencies = [(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
-        let tree = HuffmanTree::new(&symbols_and_frequencies);
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
         let symbol_depths = [3, 5, 4, 5, 3, 4, 4, 4, 3, 3, 2, 2, 1];
         let depth = get_max_depth_under_node(10, &tree, &symbol_depths);
         assert_eq!(
@@ -495,17 +551,17 @@ mod test {
     }
 
     fn assert_depth_between(depths: &[usize], index: usize, less_eq: &[usize], more_eq: &[usize]) {
-        for i in less_eq {
+        for &i in less_eq {
             assert!(
-                depths[index] >= depths[*i],
+                depths[index] >= depths[i],
                 "Depth at index {} must be greater than depth at index {}",
                 index,
                 i
             );
         }
-        for i in more_eq {
+        for &i in more_eq {
             assert!(
-                depths[index] <= depths[*i],
+                depths[index] <= depths[i],
                 "Depth at index {} must be less or equal to depth at index {}",
                 index,
                 i
@@ -515,11 +571,10 @@ mod test {
 
     #[test]
     fn test_higher_frequent_symbols_must_have_less_depth_with_default_tree() {
-        let symbols_and_frequencies = [(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
-        let tree = HuffmanTree::new(&symbols_and_frequencies);
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
         let depths = calculate_depth_for_each_symbol(&tree);
         // symbol with the same frequency as the test symbol should be placed in the more_eq slice,
-        // because they can be placed at the same depth, or if the come later, be placed on a
+        // because they can be placed at the same depth, or if they come later, be placed on a
         // higher depth.
         assert_depth_between(&depths, 0, &[4], &[1, 3, 2, 5, 6]);
         assert_depth_between(&depths, 1, &[2, 5, 6, 0, 4], &[3]);
@@ -532,12 +587,11 @@ mod test {
 
     #[test]
     fn test_higher_frequent_symbols_must_have_less_depth_with_right_growing_tree() {
-        let symbols_and_frequencies = [(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
-        let mut tree = HuffmanTree::new(&symbols_and_frequencies);
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
         tree.reorder_right_growing();
         let depths = calculate_depth_for_each_symbol(&tree);
         // symbol with the same frequency as the test symbol should be placed in the more_eq slice,
-        // because they can be placed at the same depth, or if the come later, be placed on a
+        // because they can be placed at the same depth, or if they come later, be placed on a
         // higher depth.
         assert_depth_between(&depths, 0, &[4], &[1, 3, 2, 5, 6]);
         assert_depth_between(&depths, 1, &[2, 5, 6, 0, 4], &[3]);
@@ -551,20 +605,187 @@ mod test {
     #[test]
     fn test_higher_frequent_symbols_must_have_less_depth_with_right_growing_and_onestart_pattern_replaced_tree(
     ) {
-        let symbols_and_frequencies = [(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
-        let mut tree = HuffmanTree::new(&symbols_and_frequencies);
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
         tree.reorder_right_growing();
         tree.replace_onestar();
         let depths = calculate_depth_for_each_symbol(&tree);
         // symbol with the same frequency as the test symbol should be placed in the more_eq slice,
-        // because they can be placed at the same depth, or if the come later, be placed on a
+        // because they can be placed at the same depth, or if they come later, be placed on a
         // higher depth.
         assert_depth_between(&depths, 0, &[4], &[1, 3, 2, 5, 6]);
-        assert_depth_between(&depths, 1, &[2, 5, 6, 0, 4], &[3]);
+        assert_depth_between(&depths, 3, &[2, 5, 6, 0, 4], &[3]);
         assert_depth_between(&depths, 2, &[6, 0, 4], &[5, 1, 3]);
-        assert_depth_between(&depths, 3, &[2, 5, 6, 0, 4], &[1]);
+        assert_depth_between(&depths, 1, &[2, 5, 6, 0, 4], &[1]);
         assert_depth_between(&depths, 4, &[], &[1, 3, 2, 5, 6, 0]);
         assert_depth_between(&depths, 5, &[6, 0, 4], &[1, 3, 2]);
         assert_depth_between(&depths, 6, &[0, 4], &[1, 3, 2, 5]);
+    }
+
+    #[test]
+    fn test_each_node_has_correct_index_with_default_tree() {
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        for (index, node) in tree.nodes.iter().enumerate() {
+            assert_eq!(index, node.index);
+        }
+    }
+
+    #[test]
+    fn test_each_node_has_correct_index_with_right_growing_tree() {
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        tree.reorder_right_growing();
+        for (index, node) in tree.nodes.iter().enumerate() {
+            assert_eq!(index, node.index);
+        }
+    }
+
+    #[test]
+    fn test_each_node_has_correct_index_with_right_growing_and_onestar_pattern_replaced_tree() {
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        tree.reorder_right_growing();
+        tree.replace_onestar();
+        for (index, node) in tree.nodes.iter().enumerate() {
+            assert_eq!(index, node.index);
+        }
+    }
+
+    #[test]
+    fn test_pattern_push() {
+        let pattern = Max32BitPattern::new();
+        assert_eq!(pattern.buf, 0, "Initial buffer must be empty");
+        assert_eq!(pattern.pos, 0, "Initial position must be 0");
+        let pattern = pattern.push(false);
+        assert_eq!(pattern.buf, 0, "After push of 0, the buffer must be 0");
+        assert_eq!(pattern.pos, 1, "After push the position must be increased");
+        let pattern = pattern.push(true);
+        assert_eq!(
+            pattern.buf, 0x40_00_00_00,
+            "After push of 1, the most significant bit minus position must be set"
+        );
+        assert_eq!(pattern.pos, 2, "After push the position must be increased");
+    }
+
+    #[test]
+    fn test_huffman_encoder_creation() {
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        let coder = HuffmanCoder::new(&tree);
+        let table = coder.encoding_table;
+        let expected_patterns = HashMap::from([
+            (1, Max32BitPattern { buf: 0x0, pos: 2 }),
+            (
+                5,
+                Max32BitPattern {
+                    buf: 0x40_00_00_00,
+                    pos: 2,
+                },
+            ),
+            (
+                2,
+                Max32BitPattern {
+                    buf: 0x80_00_00_00,
+                    pos: 4,
+                },
+            ),
+            (
+                4,
+                Max32BitPattern {
+                    buf: 0x90_00_00_00,
+                    pos: 4,
+                },
+            ),
+            (
+                3,
+                Max32BitPattern {
+                    buf: 0xA0_00_00_00,
+                    pos: 3,
+                },
+            ),
+            (
+                6,
+                Max32BitPattern {
+                    buf: 0xC0_00_00_00,
+                    pos: 3,
+                },
+            ),
+            (
+                7,
+                Max32BitPattern {
+                    buf: 0xE0_00_00_00,
+                    pos: 3,
+                },
+            ),
+        ]);
+        for table_entry in table.iter() {
+            let expected_pattern = expected_patterns.get(&table_entry.symbol).unwrap();
+            let actual_pattern = table_entry.pattern;
+            assert_eq!(
+                actual_pattern.pos, expected_pattern.pos,
+                "Pattern position does not match"
+            );
+            assert_eq!(
+                actual_pattern.buf, expected_pattern.buf,
+                "Expected pattern '{:#x}' but was '{:#x}'",
+                expected_pattern.buf, actual_pattern.buf
+            );
+        }
+    }
+
+    const TEST_SYMBOL_SEQUENCE: &[u32] = &[1, 3, 2, 2, 7, 5, 4, 4, 1];
+    const TEST_BYTE_SEQUENCE: &[u8] = &[0b00110111, 0b10111101, 0b01011110, 0b11100000];
+
+    #[test]
+    fn test_coder_encode() {
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        tree.reorder_right_growing();
+        tree.replace_onestar();
+        let coder = HuffmanCoder::new(&tree);
+        let mut buffer = Vec::new();
+        let mut writer = BitWriter::new(&mut buffer, false);
+        coder
+            .encode_sequence(TEST_SYMBOL_SEQUENCE, &mut writer)
+            .unwrap();
+        writer.flush().expect("Flush failed");
+        for (index, &byte) in buffer.iter().enumerate() {
+            assert_eq!(
+                byte, TEST_BYTE_SEQUENCE[index],
+                "Byte at index {} does not match",
+                index
+            );
+        }
+    }
+
+    #[test]
+    fn test_coder_encode_illegal_symbol() {
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        tree.reorder_right_growing();
+        tree.replace_onestar();
+        let coder = HuffmanCoder::new(&tree);
+        let mut buffer = Vec::new();
+        let mut writer = BitWriter::new(&mut buffer, false);
+        let result = coder.encode_sequence(&[1, 2, 3, 4, 5, 6, 7, 8], &mut writer);
+        if let Err(CodingError::UnknownSymbolError(symbol)) = result {
+            assert_eq!(symbol, 8);
+        } else {
+            panic!("Coding error not detected");
+        }
+    }
+
+    #[test]
+    fn test_coder_decode() {
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        tree.reorder_right_growing();
+        tree.replace_onestar();
+        let coder = HuffmanCoder::new(&tree);
+        let sequence = Vec::from(TEST_BYTE_SEQUENCE);
+        let mut symbol_sequence = Vec::new();
+        coder
+            .decode_sequence(&mut sequence.as_slice(), &mut symbol_sequence)
+            .unwrap();
+        for (index, &symbol) in TEST_SYMBOL_SEQUENCE.iter().enumerate() {
+            assert_eq!(
+                symbol_sequence[index], symbol,
+                "Symbol does not match at index {}",
+                index
+            );
+        }
     }
 }
