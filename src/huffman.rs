@@ -1,6 +1,6 @@
 use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd, Reverse};
-use std::collections::BinaryHeap;
-use std::fmt;
+use std::collections::{BinaryHeap, VecDeque};
+use std::{fmt, future};
 use std::io::{Read, Write};
 
 use crate::binary_stream::BitWriter;
@@ -22,6 +22,7 @@ pub struct HuffmanTree {
     nodes: Vec<Node>,
     root_index: usize,
     least_frequent_symbol_node_index: usize,
+    leaf_count: usize
 }
 
 #[derive(Clone, Copy)]
@@ -53,15 +54,15 @@ pub struct HuffmanCoder<'a> {
 // -> the subtree with more depth is always the right child after this call
 // -> if called with right_path=true it will also replace the 1* pattern
 // WARNING: replacing 1* has to take place AFTER swapping (two separate calls)
-fn move_longer_subtree_to_the_right(
+fn replace_one_star_pattern(
     tree: &mut HuffmanTree,
     current_node_index: usize,
-    prevent_one_star_pattern_on_right_subtree: bool,
-) -> u32 {
+    only_ones_taken: bool,
+) {
     let node = tree.nodes[current_node_index];
     match node.kind {
         NodeKind::Leaf { symbol: _ } => {
-            if prevent_one_star_pattern_on_right_subtree {
+            if only_ones_taken {
                 // switch smallest node index into this position
                 tree.nodes[current_node_index].index = tree.least_frequent_symbol_node_index;
                 tree.nodes[tree.least_frequent_symbol_node_index].index = current_node_index;
@@ -72,31 +73,49 @@ fn move_longer_subtree_to_the_right(
                 } else {
                     panic!("Leaf with smallest frequency not a leaf?");
                 }
-                return 2;
-            }
-            1
-        }
-        NodeKind::OneStar { symbol: _ } => 2,
+              }
+          }
+        NodeKind::OneStar { symbol: _ } => (),
         NodeKind::Inner {
             left: left_node_index,
             right: right_node_index,
         } => {
-            let left_tree_depth = move_longer_subtree_to_the_right(tree, left_node_index, false);
-            let right_tree_depth = move_longer_subtree_to_the_right(
+            let left_tree_depth = replace_one_star_pattern(tree, left_node_index, false);
+            let right_tree_depth = replace_one_star_pattern(
                 tree,
                 right_node_index,
-                prevent_one_star_pattern_on_right_subtree,
+                only_ones_taken,
             );
-            // if wrong order, swap
-            if left_tree_depth > right_tree_depth {
-                tree.nodes[node.index].kind = NodeKind::Inner {
-                    left: right_node_index,
-                    right: left_node_index,
-                };
-                return left_tree_depth + 1;
-            }
-            right_tree_depth + 1
         }
+    }
+}
+
+
+fn merge_lists(list1: Vec<Vec<usize>>, list2: Vec<Vec<usize>>) -> Vec<Vec<usize>>{
+    let mut result_list = list1;
+    for (pos, layer) in list2.iter().enumerate() {
+	if pos < result_list.len() {
+	    layer.iter().for_each(|i| result_list[pos].push(*i));
+	} else {
+	    result_list.push(layer.to_vec());
+	}
+    }
+    let mut final_list = vec![vec![]];
+    final_list.append(& mut result_list);
+    final_list
+}
+
+// returns a list of leafs at each depth level of the tree
+fn leaf_list(root_index: usize, tree: & HuffmanTree) -> Vec<Vec<usize>> {
+    let node = tree.nodes[root_index];
+    match node.kind {
+	NodeKind::OneStar {symbol: _} => { panic!("reordering needs to happen before replacing the onestar pattern")}
+	NodeKind::Leaf {symbol: _} => { vec![vec![node.index]] }
+	NodeKind::Inner {left, right} => {
+	    let left_leaf_list = leaf_list(left, tree);
+	    let right_leaf_list = leaf_list(right, tree);
+	    merge_lists(left_leaf_list, right_leaf_list)
+	}
     }
 }
 
@@ -107,6 +126,7 @@ impl HuffmanTree {
 
         let mut least_frequent_symbol_node_index = 0;
         let mut smallest_frequency = usize::MAX;
+	let leaf_count = symbols_and_frequencies.len();
         // create the initial nodeset
         for &(symbol, frequency) in symbols_and_frequencies.iter() {
             let node = Node {
@@ -141,15 +161,43 @@ impl HuffmanTree {
             nodes,
             root_index,
             least_frequent_symbol_node_index,
+	    leaf_count
         }
     }
 
+    
     pub fn reorder_right_growing(&mut self) {
-        move_longer_subtree_to_the_right(self, self.root_index, false);
+	// list of leafs with depths
+	let layers = leaf_list(self.root_index, self);
+	self.nodes.truncate(self.leaf_count);
+
+	let mut merging_que = VecDeque::new();
+	let mut future_que = VecDeque::new();
+
+	for current_layer in layers.into_iter().rev() {
+	    current_layer.iter().for_each(|i| merging_que.push_back(*i));
+	    while merging_que.len() > 1 {
+		let right = self.nodes[merging_que.pop_front().unwrap()];
+		let left = self.nodes[merging_que.pop_front().unwrap()];
+		let node = Node {
+		    frequency: left.frequency + right.frequency,
+		    index: self.nodes.len(),
+		    kind: NodeKind::Inner {
+			left: left.index,
+			right: right.index
+		    }
+		};
+		self.nodes.push(node);
+		future_que.push_back(node.index);
+	    }
+	    merging_que.extend(future_que.iter());
+	    future_que.clear();
+	}
+	self.root_index = merging_que.pop_front().unwrap();
     }
 
     pub fn replace_onestar(&mut self) {
-        move_longer_subtree_to_the_right(self, self.root_index, true);
+        replace_one_star_pattern(self, self.root_index, true);
     }
 }
 
