@@ -86,11 +86,11 @@ fn replace_one_star_pattern(
     }
 }
 
-fn merge_lists(list1: Vec<Vec<usize>>, list2: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
-    let mut result_list = list2;
+fn merge_lists(list1: &[Vec<usize>], list2: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    let mut result_list = list2.to_vec();
     for (pos, layer) in list1.iter().enumerate() {
         if pos < result_list.len() {
-            layer.iter().for_each(|i| result_list[pos].push(*i));
+            layer.iter().for_each(|&i| result_list[pos].push(i));
         } else {
             result_list.push(layer.to_vec());
         }
@@ -113,7 +113,7 @@ fn leaf_list(root_index: usize, tree: &HuffmanTree) -> Vec<Vec<usize>> {
         NodeKind::Inner { left, right } => {
             let left_leaf_list = leaf_list(left, tree);
             let right_leaf_list = leaf_list(right, tree);
-            merge_lists(left_leaf_list, right_leaf_list)
+            merge_lists(&left_leaf_list, &right_leaf_list)
         }
     }
 }
