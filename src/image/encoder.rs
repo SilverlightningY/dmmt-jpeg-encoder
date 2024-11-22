@@ -1,4 +1,5 @@
 use crate::error::Error;
+use crate::huffman::{HuffmanCoder, HuffmanTree};
 use crate::Result;
 use core::panic;
 use std::fmt::Display;
@@ -86,7 +87,7 @@ impl<'a, T: Write> Encoder<'a, T> {
         // self.write_luminance_quantization_table()?;
         // self.write_chrominance_quantization_table()?;
         self.write_start_of_frame()?;
-        // write huffman tables
+        self.write_huffman_tables()?;
         // self.write_start_of_scan()?;
         // self.write_image_data()?;
         self.write_end_of_file()?;
@@ -123,6 +124,31 @@ impl<'a, T: Write> Encoder<'a, T> {
     fn write_end_of_file(&mut self) -> Result<()> {
         self.write_control_marker(ControlMarker::EndOfFile)
             .map_err(|_| Error::FailedToWriteEndOfFile)
+    }
+
+    fn write_huffman_tables(&mut self) -> Result<()> {
+        // TODO: get data from future dct, and sort it into 4 tables
+        let input: &[(u32, usize); 7] =
+            &[(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
+
+        let tree = HuffmanTree::new(input);
+        let mut table = HuffmanCoder::new(&tree);
+
+        table.encoding_table.sort_by_key(|entry| entry.pattern.pos);
+
+        let mut header: Vec<u8> = vec![0; 17 + table.encoding_table.len()];
+        header[0] = 0x00; // set table index
+
+        for (index, entry) in table.encoding_table.iter().enumerate() {
+            let length = entry.pattern.pos;
+            if length > 0 && length <= 16 {
+                header[length] += 1;
+                header[17 + index] = entry.symbol as u8;
+            }
+        }
+
+        self.write_segment(SegmentMarker::HuffmanTable, &header)
+            .map_err(|_| Error::FailedToWriteHuffmanTables)
     }
 
     fn write_jfif_application_header(&mut self) -> Result<()> {
