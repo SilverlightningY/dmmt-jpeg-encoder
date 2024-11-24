@@ -5,6 +5,8 @@ use std::io::{Read, Write};
 
 use crate::binary_stream::BitWriter;
 
+mod length_limited;
+
 #[derive(Clone, Copy)]
 enum NodeKind {
     Leaf { symbol: u32 },
@@ -48,6 +50,12 @@ pub struct HuffmanCoder<'a> {
     // this is sorted according to symbol
     encoding_table: Vec<TableEntry>,
     tree: &'a HuffmanTree,
+}
+
+type HuffmanCode = Vec<usize>;
+
+trait HuffmanCodeGenerator {
+    fn generate(&mut self) -> HuffmanCode;
 }
 
 // this function swaps the subtrees at each node
