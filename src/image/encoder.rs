@@ -232,3 +232,49 @@ impl<'a, T: Write> Encoder<'a, T> {
         todo!("implement write image data");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::image::{
+        ppm_parser::{PPMParser, PPMTokenizer},
+        transformer::JpegTransformer,
+        ChannelSubsamplingMethod, ChromaSubsamplingPreset, OutputImage, TransformationOptions,
+    };
+
+    use super::Encoder;
+
+    fn init_output_image() -> OutputImage {
+        let string = "P3 3 2 255 255 0 0   0 255 0   0 0 255 255 255 0  255 0 255  0 255 255";
+        let image = PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
+        let transformer = JpegTransformer::new(&image);
+        let transformation_options = TransformationOptions {
+            chroma_subsampling_preset: ChromaSubsamplingPreset::P444,
+            bits_per_channel: 8,
+            chroma_subsampling_method: ChannelSubsamplingMethod::Skip,
+        };
+        transformer.transform(&transformation_options).unwrap()
+    }
+    #[test]
+    fn test_jfif() {
+        let output_image = init_output_image();
+        let mut output = Vec::new();
+        let mut encoder = Encoder::new(&output_image, &mut output);
+        encoder.write_jfif_application_header().unwrap();
+        assert_eq!(
+            output[0..18],
+            [
+                0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', b'\0', 0x01, 0x02, 0x00, 0x00,
+                0x48, 0x00, 0x48, 0, 0
+            ]
+        )
+    }
+    #[test]
+    fn test_huffman() {
+        let output_image = init_output_image();
+        let mut output = Vec::new();
+        let mut encoder = Encoder::new(&output_image, &mut output);
+        encoder.write_huffman_tables().unwrap();
+        println!("{:?}", output);
+        assert_eq!(output[0..4], [0xFF, 0xC4, 0x00, 0x1A])
+    }
+}
