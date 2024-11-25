@@ -76,6 +76,11 @@ impl Display for SegmentMarker {
     }
 }
 
+enum TableKind {
+    AC,
+    DC,
+}
+
 impl<'a, T: Write> Encoder<'a, T> {
     pub fn new(image: &'a OutputImage, writer: &'a mut T) -> Encoder<'a, T> {
         Encoder { image, writer }
@@ -126,19 +131,25 @@ impl<'a, T: Write> Encoder<'a, T> {
             .map_err(|_| Error::FailedToWriteEndOfFile)
     }
 
-    fn write_huffman_tables(&mut self) -> Result<()> {
-        // TODO: get data from future dct, and sort it into 4 tables
-        let input: &[(u32, usize); 7] =
-            &[(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
-
-        let tree = HuffmanTree::new(input);
+    fn write_huffman_table(
+        &mut self,
+        tree: &HuffmanTree,
+        kind: TableKind,
+        index: u8,
+    ) -> Result<()> {
+        if index > 3 {
+            panic!("Index must be between 0 and 3");
+        }
         let mut table = HuffmanCoder::new(&tree);
-
         table.encoding_table.sort_by_key(|entry| entry.pattern.pos);
 
-        let mut header: Vec<u8> = vec![0; 17 + table.encoding_table.len()];
-        header[0] = 0x00; // set table index
+        let table_ident = match kind {
+            TableKind::DC => 0b0000_0000,
+            TableKind::AC => 0b0001_0000,
+        } | (index & 0b0000_0011); // Mask index to ensure max 2 bits
 
+        let mut header: Vec<u8> = vec![0; 17 + table.encoding_table.len()];
+        header[0] = table_ident;
         for (index, entry) in table.encoding_table.iter().enumerate() {
             let length = entry.pattern.pos;
             if length > 0 && length <= 16 {
@@ -146,8 +157,26 @@ impl<'a, T: Write> Encoder<'a, T> {
                 header[17 + index] = entry.symbol as u8;
             }
         }
-
         self.write_segment(SegmentMarker::HuffmanTable, &header)
+            .map_err(|_| Error::FailedToWriteHuffmanTables)
+    }
+
+    fn write_huffman_tables(&mut self) -> Result<()> {
+        // TODO: get real data from dct
+        let input: &[(u32, usize); 7] =
+            &[(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
+        let tree = HuffmanTree::new(input);
+
+        // Write luma tables
+        self.write_huffman_table(&tree, TableKind::DC, 0)
+            .map_err(|_| Error::FailedToWriteHuffmanTables)?;
+        self.write_huffman_table(&tree, TableKind::AC, 0)
+            .map_err(|_| Error::FailedToWriteHuffmanTables)?;
+
+        // Write chroma tables
+        self.write_huffman_table(&tree, TableKind::DC, 1)
+            .map_err(|_| Error::FailedToWriteHuffmanTables)?;
+        self.write_huffman_table(&tree, TableKind::AC, 1)
             .map_err(|_| Error::FailedToWriteHuffmanTables)
     }
 
