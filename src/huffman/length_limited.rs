@@ -1,8 +1,9 @@
 use std::collections::BinaryHeap;
+use std::iter;
 
 use super::{HuffmanCode, HuffmanCodeGenerator};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct Node {
     frequency: usize,
     kind: NodeKind,
@@ -17,73 +18,86 @@ impl From<usize> for Node {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 enum NodeKind {
     Leaf,
     Package,
 }
 
-pub struct LengthLimitedHuffmanCodeGenerator<'a> {
-    sorted_frequencies: &'a [Node],
+struct Solution {
+    number_of_packages: usize,
+    number_of_leafs_in_package: usize,
+}
+
+pub struct LengthLimitedHuffmanCodeGenerator {
     limit: usize,
-    packages: Vec<BinaryHeap<Node>>,
-    solution: Vec<Vec<Node>>,
 }
 
-impl HuffmanCodeGenerator for LengthLimitedHuffmanCodeGenerator<'_> {
-    fn generate(&mut self) -> HuffmanCode {
-        self.calculate_packages();
-        self.calculate_solution();
-        self.sum_up_codeword_lengths()
-    }
-}
-
-impl LengthLimitedHuffmanCodeGenerator<'_> {
-    fn calculate_packages(&mut self) {
-        self.packages.push(self.calculate_initial_package());
-        for _ in 1..self.limit {
-            self.packages.push(self.calculate_next_package());
-        }
-    }
-
-    fn calculate_solution(&mut self) {
-        self.solution.push(self.calculate_initial_solution());
-        for _ in 1..self.limit {
-            self.solution.push(self.calculate_next_solution());
-        }
-    }
-
-    fn sum_up_codeword_lengths(&mut self) -> HuffmanCode {
-        self.solution
-            .iter()
-            .flat_map(|v| 0..get_number_of_leaf_nodes_in(v))
-            .fold(
-                vec![usize::default(); self.sorted_frequencies.len()],
-                |mut v, index| {
-                    v[index] += 1;
-                    v
-                },
-            )
-    }
-}
-
-impl<'a> LengthLimitedHuffmanCodeGenerator<'a> {
-    pub fn new(
-        sorted_frequencies: &'a [Node],
-        limit: usize,
-    ) -> LengthLimitedHuffmanCodeGenerator<'_> {
+impl HuffmanCodeGenerator for LengthLimitedHuffmanCodeGenerator {
+    fn generate(&mut self, sorted_frequencies: &[usize]) -> HuffmanCode {
         assert!(
             sorted_frequencies.is_sorted(),
             "Frequencies must be sorted in descending order"
         );
-        let packages = Vec::with_capacity(limit);
-        let solution = Vec::with_capacity(limit);
-        LengthLimitedHuffmanCodeGenerator {
-            limit,
-            sorted_frequencies,
-            packages,
-            solution,
-        }
+        let code_length = sorted_frequencies.len();
+        assert!(
+            code_length <= 2_usize.pow(self.limit as u32),
+            "Tree of depth limit {} can not hold {} code words",
+            self.limit,
+            code_length
+        );
+        let sorted_frequencies: Vec<Node> =
+            sorted_frequencies.iter().copied().map(Node::from).collect();
+        let packages = Self::calculate_packages(self.limit, &sorted_frequencies);
+        let solution_lengths = Self::calculate_solution(&packages, code_length);
+        Self::sum_up_codeword_lengths(solution_lengths, code_length)
+    }
+}
+
+impl LengthLimitedHuffmanCodeGenerator {
+    pub fn new(limit: usize) -> LengthLimitedHuffmanCodeGenerator {
+        LengthLimitedHuffmanCodeGenerator { limit }
+    }
+
+    fn calculate_packages(limit: usize, sorted_frequencies: &[Node]) -> Vec<Vec<Node>> {
+        let initial_item = iter::once(Vec::from(sorted_frequencies));
+        let following_items =
+            (1..limit).scan(Vec::from(sorted_frequencies), |previous_nodes, _| {
+                let next_nodes = Self::calculate_next_package(previous_nodes, sorted_frequencies);
+                previous_nodes.clear();
+                previous_nodes.extend(&next_nodes);
+                Some(next_nodes)
+            });
+        initial_item.chain(following_items).collect()
+    }
+
+    fn calculate_solution(
+        packages: &[Vec<Node>],
+        code_length: usize,
+    ) -> impl Iterator<Item = usize> + '_ {
+        let initial_solution = Solution {
+            number_of_packages: code_length - 1,
+            number_of_leafs_in_package: 0,
+        };
+        packages.iter().rev().scan(initial_solution, |s, p| {
+            let next_solution = Self::calculate_next_solution(s, p);
+            s.number_of_packages = next_solution.number_of_packages;
+            s.number_of_leafs_in_package = next_solution.number_of_leafs_in_package;
+            Some(next_solution.number_of_leafs_in_package)
+        })
+    }
+
+    fn sum_up_codeword_lengths(
+        solution_lengths: impl Iterator<Item = usize>,
+        code_length: usize,
+    ) -> HuffmanCode {
+        solution_lengths.flat_map(|l| 0..l).fold(
+            vec![usize::default(); code_length],
+            |mut v, index| {
+                v[index] += 1;
+                v
+            },
+        )
     }
 
     fn merge_pairwise(nodes: &[Node]) -> impl Iterator<Item = Node> + '_ {
@@ -93,223 +107,56 @@ impl<'a> LengthLimitedHuffmanCodeGenerator<'a> {
         })
     }
 
-    fn calculate_initial_package(&self) -> BinaryHeap<Node> {
-        BinaryHeap::from_iter(self.sorted_frequencies.iter().cloned())
+    fn calculate_next_package(previous_nodes: &[Node], sorted_frequencies: &[Node]) -> Vec<Node> {
+        let mut return_value = BinaryHeap::from_iter(Self::merge_pairwise(previous_nodes));
+        return_value.extend(sorted_frequencies);
+        return_value.into_sorted_vec()
     }
 
-    fn calculate_next_package(&self) -> BinaryHeap<Node> {
-        let previous_nodes: Vec<Node> = self
-            .packages
-            .last()
-            .expect("Packages must be initialized with the unmodified frequencies first")
-            .clone()
-            .into_sorted_vec()
-            .into_iter()
-            .collect();
-        let mut return_value = BinaryHeap::from_iter(Self::merge_pairwise(&previous_nodes));
-        return_value.extend(self.sorted_frequencies);
-        return_value
-    }
-
-    fn calculate_initial_solution(&self) -> Vec<Node> {
-        self.packages
-            .last()
-            .expect("Packages must contain at least one entry")
-            .clone()
-            .into_sorted_vec()
-            .into_iter()
-            .take(2 * self.sorted_frequencies.len() - 2)
-            .collect()
-    }
-
-    fn calculate_next_solution(&self) -> Vec<Node> {
-        let last_solution = self
-            .solution
-            .last()
-            .expect("Solution must be initialized first.");
-        let count = get_number_of_package_nodes_in(last_solution);
-        let level = self.packages.len() - self.solution.len() - 1;
-        self.packages[level]
-            .clone()
-            .into_sorted_vec()
-            .into_iter()
-            .take(2 * count)
-            .collect()
+    fn calculate_next_solution(previous_solution: &Solution, package: &[Node]) -> Solution {
+        let count = previous_solution.number_of_packages * 2;
+        let range = &package[0..count];
+        range.iter().fold(
+            Solution {
+                number_of_packages: 0,
+                number_of_leafs_in_package: 0,
+            },
+            |mut solution, node| {
+                match node.kind {
+                    NodeKind::Leaf => solution.number_of_leafs_in_package += 1,
+                    NodeKind::Package => solution.number_of_packages += 1,
+                }
+                solution
+            },
+        )
     }
 }
 
-fn get_number_of_package_nodes_in(nodes: &[Node]) -> usize {
-    nodes.iter().filter(|n| n.kind == NodeKind::Package).count()
-}
-
-fn get_number_of_leaf_nodes_in(nodes: &[Node]) -> usize {
-    nodes.iter().filter(|n| n.kind == NodeKind::Leaf).count()
-}
+impl LengthLimitedHuffmanCodeGenerator {}
 
 #[cfg(test)]
 mod test {
     use crate::huffman::HuffmanCodeGenerator;
 
-    use super::{
-        get_number_of_leaf_nodes_in, get_number_of_package_nodes_in,
-        LengthLimitedHuffmanCodeGenerator, Node, NodeKind,
-    };
-
-    #[test]
-    fn test_get_number_of_package_nodes_in() {
-        let nodes = &[
-            Node {
-                frequency: 7,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 2,
-                kind: NodeKind::Package,
-            },
-            Node {
-                frequency: 7,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 2,
-                kind: NodeKind::Package,
-            },
-            Node {
-                frequency: 7,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 2,
-                kind: NodeKind::Package,
-            },
-            Node {
-                frequency: 7,
-                kind: NodeKind::Leaf,
-            },
-        ];
-        let expected = 3;
-        let actual = get_number_of_package_nodes_in(nodes);
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    fn test_get_number_of_leaf_nodes_in() {
-        let nodes = &[
-            Node {
-                frequency: 7,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 2,
-                kind: NodeKind::Package,
-            },
-            Node {
-                frequency: 7,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 2,
-                kind: NodeKind::Package,
-            },
-            Node {
-                frequency: 7,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 2,
-                kind: NodeKind::Package,
-            },
-            Node {
-                frequency: 7,
-                kind: NodeKind::Leaf,
-            },
-        ];
-        let expected = 4;
-        let actual = get_number_of_leaf_nodes_in(nodes);
-        assert_eq!(expected, actual);
-    }
+    use super::{LengthLimitedHuffmanCodeGenerator, Node, NodeKind};
 
     fn get_test_sorted_frequencies() -> [Node; 11] {
-        [
-            Node {
-                frequency: 1,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 2,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 5,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 8,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 10,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 11,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 14,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 14,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 15,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 18,
-                kind: NodeKind::Leaf,
-            },
-            Node {
-                frequency: 20,
-                kind: NodeKind::Leaf,
-            },
-        ]
-    }
-
-    #[test]
-    fn test_calculate_initial_package() {
-        let sorted_frequencies = get_test_sorted_frequencies();
-        let generator = LengthLimitedHuffmanCodeGenerator::new(&sorted_frequencies, 3);
-        let initial_package = generator.calculate_initial_package();
-        assert_eq!(
-            initial_package.len(),
-            11,
-            "Lenght of initial_package does not match"
-        );
-        assert_eq!(
-            initial_package
-                .iter()
-                .filter(|n| n.kind == NodeKind::Leaf)
-                .count(),
-            initial_package.len(),
-            "Initial Nodes must all be Leafs"
-        );
+        [1, 2, 5, 8, 10, 11, 14, 14, 15, 18, 20].map(Node::from)
     }
 
     #[test]
     fn test_calculate_packages() {
         let limit = 4;
         let sorted_frequencies = get_test_sorted_frequencies();
-        let mut generator = LengthLimitedHuffmanCodeGenerator::new(&sorted_frequencies, limit);
-        generator.calculate_packages();
+        let packages =
+            LengthLimitedHuffmanCodeGenerator::calculate_packages(limit, &sorted_frequencies);
         assert_eq!(
-            generator.packages.len(),
+            packages.len(),
             limit,
             "The length of the packages vector must be equal to the limit"
         );
-        for (index, package) in generator.packages.iter().enumerate().skip(1) {
+        for (index, package) in packages.iter().enumerate().skip(1) {
+            println!("{:#?}", package);
             assert!(
                 !package.is_empty(),
                 "Package at index {} must not be empty",
@@ -319,7 +166,7 @@ mod test {
                 .iter()
                 .filter(|n| n.kind == NodeKind::Package)
                 .count();
-            let expected_number_of_packages = generator.packages[index - 1].len() / 2;
+            let expected_number_of_packages = packages[index - 1].len() / 2;
             assert_eq!(
                 number_of_packages, expected_number_of_packages,
                 "Number of packages does not match at index {}",
@@ -339,35 +186,23 @@ mod test {
     fn test_calculate_solution() {
         let limit = 4;
         let sorted_frequencies = get_test_sorted_frequencies();
-        let mut generator = LengthLimitedHuffmanCodeGenerator::new(&sorted_frequencies, limit);
-        generator.calculate_packages();
-        generator.calculate_solution();
+        let code_length = sorted_frequencies.len();
+        let packages =
+            LengthLimitedHuffmanCodeGenerator::calculate_packages(limit, &sorted_frequencies);
+        let mut solution =
+            LengthLimitedHuffmanCodeGenerator::calculate_solution(&packages, code_length);
         assert_eq!(
-            generator.solution.len(),
+            solution.by_ref().count(),
             limit,
-            "The length of the solution vector must be equal to the limit"
+            "The length of the solution must be equal to the limit"
         );
-        for (index, solution) in generator.solution.iter().enumerate().skip(1) {
+        for (index, solution_length) in solution.by_ref().enumerate() {
             assert!(
-                !solution.is_empty(),
-                "Solution at index {} must not be empty",
-                index
-            );
-            assert!(
-                solution.is_sorted(),
-                "Solution at index {} must be sorted",
-                index
-            );
-            let expected_number_of_nodes = generator.solution[index - 1]
-                .iter()
-                .filter(|n| n.kind == NodeKind::Package)
-                .count()
-                * 2;
-            assert_eq!(
-                solution.len(),
-                expected_number_of_nodes,
-                "Number of nodes does not match at index {}",
-                index
+                solution_length <= code_length,
+                "Solution length at index {} must be less or equal to {}, but was {}",
+                index,
+                code_length,
+                solution_length
             );
         }
     }
@@ -375,11 +210,10 @@ mod test {
     #[test]
     fn test_generate_one() {
         let limit = 4;
-        let sorted_frequencies: [Node; 11] =
-            [1, 2, 5, 8, 10, 11, 14, 14, 15, 18, 20].map(Node::from);
-        let mut generator = LengthLimitedHuffmanCodeGenerator::new(&sorted_frequencies, limit);
+        let sorted_frequencies: [usize; 11] = [1, 2, 5, 8, 10, 11, 14, 14, 15, 18, 20];
+        let mut generator = LengthLimitedHuffmanCodeGenerator::new(limit);
         let expected_code = [4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3];
-        let code = generator.generate();
+        let code = generator.generate(&sorted_frequencies);
         for (index, (actual_len, expected_len)) in code.into_iter().zip(expected_code).enumerate() {
             assert_eq!(
                 actual_len, expected_len,
@@ -392,10 +226,10 @@ mod test {
     #[test]
     fn test_generate_two() {
         let limit = 5;
-        let sorted_frequencies: [Node; 10] = [1, 1, 1, 2, 2, 2, 3, 6, 17, 20].map(Node::from);
-        let mut generator = LengthLimitedHuffmanCodeGenerator::new(&sorted_frequencies, limit);
+        let sorted_frequencies: [usize; 10] = [1, 1, 1, 2, 2, 2, 3, 6, 17, 20];
+        let mut generator = LengthLimitedHuffmanCodeGenerator::new(limit);
         let expected_code = [5, 5, 4, 4, 4, 4, 4, 3, 2, 2];
-        let code = generator.generate();
+        let code = generator.generate(&sorted_frequencies);
         for (index, (acutal_len, expected_len)) in code.into_iter().zip(expected_code).enumerate() {
             assert_eq!(
                 acutal_len, expected_len,
@@ -408,10 +242,10 @@ mod test {
     #[test]
     fn test_generate_three() {
         let limit = 4;
-        let sorted_frequencies: [Node; 10] = [1, 1, 1, 2, 2, 2, 3, 6, 17, 20].map(Node::from);
-        let mut generator = LengthLimitedHuffmanCodeGenerator::new(&sorted_frequencies, limit);
+        let sorted_frequencies: [usize; 10] = [1, 1, 1, 2, 2, 2, 3, 6, 17, 20];
+        let mut generator = LengthLimitedHuffmanCodeGenerator::new(limit);
         let expected_code = [4, 4, 4, 4, 4, 4, 4, 4, 2, 2];
-        let code = generator.generate();
+        let code = generator.generate(&sorted_frequencies);
         for (index, (acutal_len, expected_len)) in code.into_iter().zip(expected_code).enumerate() {
             assert_eq!(
                 acutal_len, expected_len,
@@ -419,5 +253,79 @@ mod test {
                 index
             );
         }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_generate_too_long_input_array() {
+        let limit = 3;
+        let sorted_frequencies: [usize; 10] = [1, 1, 1, 2, 2, 2, 3, 6, 17, 20];
+        let mut generator = LengthLimitedHuffmanCodeGenerator::new(limit);
+        let _ = generator.generate(&sorted_frequencies);
+    }
+
+    #[test]
+    fn test_merge_pairwise_odd_length_list() {
+        let nodes = [1, 2, 3, 4, 5, 6, 7].map(Node::from);
+        let mut pair_iter = LengthLimitedHuffmanCodeGenerator::merge_pairwise(&nodes);
+        assert_eq!(
+            pair_iter.by_ref().count(),
+            nodes.len() / 2,
+            "Length of pairs must be half the lenght of the input slice"
+        );
+        let expected_nodes = [
+            Node {
+                frequency: 3,
+                kind: NodeKind::Package,
+            },
+            Node {
+                frequency: 7,
+                kind: NodeKind::Package,
+            },
+            Node {
+                frequency: 11,
+                kind: NodeKind::Package,
+            },
+        ];
+        for (index, (expected_node, actual_node)) in
+            expected_nodes.iter().zip(pair_iter).enumerate()
+        {
+            assert_eq!(
+                expected_node.frequency, actual_node.frequency,
+                "Frequency does not match at index {}",
+                index
+            );
+            assert!(
+                actual_node.kind == NodeKind::Package,
+                "Node kind must be package after merge, but was not at index {}",
+                index
+            );
+        }
+    }
+
+    #[test]
+    fn test_calculate_next_package() {
+        let previous_nodes = [1, 2, 3, 4, 5].map(Node::from);
+        let sorted_frequencies = [1, 3, 5, 7].map(Node::from);
+        let package = LengthLimitedHuffmanCodeGenerator::calculate_next_package(
+            &previous_nodes,
+            &sorted_frequencies,
+        );
+        let number_of_packages = package
+            .iter()
+            .filter(|n| n.kind == NodeKind::Package)
+            .count();
+        let expected_number_of_packages = 2;
+        assert_eq!(
+            number_of_packages, expected_number_of_packages,
+            "Unexpected number of package nodes in package vector"
+        );
+        let expected_len = previous_nodes.len() / 2 + sorted_frequencies.len();
+        assert_eq!(
+            package.len(),
+            expected_len,
+            "Unexpected length of package vector"
+        );
+        assert!(package.is_sorted(), "Package vector must be sorted");
     }
 }

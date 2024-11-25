@@ -55,7 +55,7 @@ pub struct HuffmanCoder<'a> {
 type HuffmanCode = Vec<usize>;
 
 trait HuffmanCodeGenerator {
-    fn generate(&mut self) -> HuffmanCode;
+    fn generate(&mut self, sorted_frequencies: &[usize]) -> HuffmanCode;
 }
 
 // this function swaps the subtrees at each node
