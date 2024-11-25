@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 
 use crate::binary_stream::BitWriter;
 
-mod length_limited;
+pub mod length_limited;
 
 #[derive(Clone, Copy)]
 enum NodeKind {
@@ -54,7 +54,7 @@ pub struct HuffmanCoder<'a> {
 
 type HuffmanCode = Vec<usize>;
 
-trait HuffmanCodeGenerator {
+pub trait HuffmanCodeGenerator {
     fn generate(&mut self, sorted_frequencies: &[usize]) -> HuffmanCode;
 }
 
@@ -94,87 +94,47 @@ fn replace_one_star_pattern(
     }
 }
 
-fn merge_lists(list1: &[Vec<usize>], list2: &[Vec<usize>]) -> Vec<Vec<usize>> {
-    let mut result_list = list2.to_vec();
-    for (pos, layer) in list1.iter().enumerate() {
-        if pos < result_list.len() {
-            layer.iter().for_each(|&i| result_list[pos].push(i));
-        } else {
-            result_list.push(layer.to_vec());
-        }
-    }
-    let mut final_list = vec![vec![]];
-    final_list.append(&mut result_list);
-    final_list
-}
-
-// returns a list of leafs at each depth level of the tree
-fn leaf_list(root_index: usize, tree: &HuffmanTree) -> Vec<Vec<usize>> {
-    let node = tree.nodes[root_index];
-    match node.kind {
-        NodeKind::OneStar { symbol: _ } => {
-            panic!("reordering needs to happen before replacing the onestar pattern")
-        }
-        NodeKind::Leaf { symbol: _ } => {
-            vec![vec![node.index]]
-        }
-        NodeKind::Inner { left, right } => {
-            let left_leaf_list = leaf_list(left, tree);
-            let right_leaf_list = leaf_list(right, tree);
-            merge_lists(&left_leaf_list, &right_leaf_list)
-        }
-    }
-}
-
 impl HuffmanTree {
-    pub fn new(symbols_and_frequencies: &[(u32, usize)]) -> HuffmanTree {
-        let mut heap = BinaryHeap::new();
-        let mut nodes: Vec<Node> = vec![];
+    pub fn new(
+        symbols_and_frequencies: &[(u32, usize)],
+        generator: &mut impl HuffmanCodeGenerator,
+    ) -> HuffmanTree {
+        let mut symbols_and_frequencies: Vec<(u32, usize)> = symbols_and_frequencies.to_vec();
+        symbols_and_frequencies.sort_by(|a, b| a.1.cmp(&b.1));
+        let frequencies: Vec<usize> = symbols_and_frequencies.iter().map(|a| a.1).collect();
+        let code = generator.generate(&frequencies);
 
-        let mut least_frequent_symbol_node_index = 0;
-        let mut smallest_frequency = usize::MAX;
-        let leaf_count = symbols_and_frequencies.len();
-        // create the initial nodeset
-        for &(symbol, frequency) in symbols_and_frequencies.iter() {
-            let node = Node {
-                frequency,
-                index: nodes.len(),
-                kind: NodeKind::Leaf { symbol },
-            };
-            heap.push(Reverse(node));
-            nodes.push(node);
-            if frequency < smallest_frequency {
-                smallest_frequency = frequency;
-                least_frequent_symbol_node_index = node.index;
-            }
-        }
-        // merge nodes until none left
-        while heap.len() > 1 {
-            let t1 = heap.pop().unwrap().0;
-            let t2 = heap.pop().unwrap().0;
-            let node = Node {
-                frequency: t1.frequency + t2.frequency,
-                index: nodes.len(),
-                kind: NodeKind::Inner {
-                    left: t1.index,
-                    right: t2.index,
-                },
-            };
-            heap.push(Reverse(node));
-            nodes.push(node);
-        }
-        let root_index = heap.pop().unwrap().0.index;
-        HuffmanTree {
-            nodes,
-            root_index,
-            least_frequent_symbol_node_index,
-            leaf_count,
-        }
+        let mut tree = HuffmanTree {
+            leaf_count: symbols_and_frequencies.len(),
+            least_frequent_symbol_node_index: 0,
+            nodes: Vec::new(),
+            root_index: 0,
+        };
+
+        symbols_and_frequencies.iter().for_each(|s| {
+            tree.nodes.push(Node {
+                frequency: s.1,
+                index: tree.nodes.len(),
+                kind: NodeKind::Leaf { symbol: s.0 },
+            });
+        });
+
+        let max_depth = code
+            .iter()
+            .fold(0 as usize, |acc, x| std::cmp::max(acc, *x));
+        let mut layers: Vec<Vec<usize>> = vec![];
+        (0..max_depth + 1).for_each(|_| layers.push(vec![]));
+
+        code.iter()
+            .enumerate()
+            .for_each(|(idx, &depth)| layers[depth].push(idx));
+        tree.build_structure(layers);
+
+        tree
     }
 
-    pub fn reorder_right_growing(&mut self) {
+    fn build_structure(&mut self, layers: Vec<Vec<usize>>) {
         // list of leafs with depths
-        let layers = leaf_list(self.root_index, self);
         self.nodes.truncate(self.leaf_count);
 
         let mut merging_que = VecDeque::new();

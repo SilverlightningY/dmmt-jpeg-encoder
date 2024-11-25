@@ -1,15 +1,14 @@
 use dmmt_jpeg_encoder::binary_stream::BitWriter;
+use dmmt_jpeg_encoder::huffman::length_limited::LengthLimitedHuffmanCodeGenerator;
 use dmmt_jpeg_encoder::huffman::{CodingError, HuffmanCoder, HuffmanTree};
 use std::io::Write;
 
 fn main() -> Result<(), CodingError> {
     // symbol-frequency pairs
     let syms_and_freqs = &[(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
-
-    let mut tree = HuffmanTree::new(syms_and_freqs);
+    let mut generator = LengthLimitedHuffmanCodeGenerator::new(3);
+    let mut tree = HuffmanTree::new(syms_and_freqs, &mut generator);
     println!("huffman tree\n{}", tree);
-    tree.reorder_right_growing();
-    println!("right-growing huffman\n{}", tree);
     tree.replace_onestar();
     println!("right-growing huffman without 1*\n{}", tree);
 
