@@ -1,5 +1,5 @@
-use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd, Reverse};
-use std::collections::{BinaryHeap, VecDeque};
+use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
+use std::collections::VecDeque;
 use std::fmt;
 use std::io::{Read, Write};
 
@@ -119,9 +119,7 @@ impl HuffmanTree {
             });
         });
 
-        let max_depth = code
-            .iter()
-            .fold(0 as usize, |acc, x| std::cmp::max(acc, *x));
+        let max_depth = code.iter().fold(0, |acc, x| std::cmp::max(acc, *x));
         let mut layers: Vec<Vec<usize>> = vec![];
         (0..max_depth + 1).for_each(|_| layers.push(vec![]));
 
@@ -404,7 +402,10 @@ mod test {
 
     use crate::{binary_stream::BitWriter, huffman::CodingError};
 
-    use super::{HuffmanCoder, HuffmanTree, Max32BitPattern, NodeKind};
+    use super::{
+        length_limited::LengthLimitedHuffmanCodeGenerator, HuffmanCoder, HuffmanTree,
+        Max32BitPattern, NodeKind,
+    };
 
     fn calculate_depth_for_each_symbol(tree: &HuffmanTree) -> Vec<usize> {
         let mut return_value = vec![usize::default(); tree.nodes.len()];
@@ -465,7 +466,8 @@ mod test {
 
     #[test]
     fn test_calculate_depth_for_each_symbol_even_len() {
-        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_EVEN_LEN);
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_EVEN_LEN, &mut code_generator);
         let symbol_depths = calculate_depth_for_each_symbol(&tree);
         let expected_symbol_depths = [3, 5, 4, 5, 3, 3, 4, 3, 2, 2, 1];
         for (index, &depth) in symbol_depths.iter().enumerate() {
@@ -478,23 +480,9 @@ mod test {
     }
 
     #[test]
-    fn test_calculate_depth_for_each_symbol_odd_len() {
-        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        let symbol_depths = calculate_depth_for_each_symbol(&tree);
-        let expected_symbol_depths = [3, 5, 4, 5, 3, 4, 4, 4, 3, 3, 2, 2, 1];
-        for (index, &depth) in symbol_depths.iter().enumerate() {
-            assert_eq!(
-                depth, expected_symbol_depths[index],
-                "Depth at index {} does not match",
-                index
-            );
-        }
-    }
-
-    #[test]
     fn test_calculate_depth_for_each_symbol_with_right_growing_tree() {
-        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        tree.reorder_right_growing();
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         let symbol_depths = calculate_depth_for_each_symbol(&tree);
         let expected_symbol_depths = [3, 5, 4, 5, 3, 4, 4, 4, 3, 3, 2, 2, 1];
         for (index, &depth) in symbol_depths.iter().enumerate() {
@@ -508,8 +496,8 @@ mod test {
 
     #[test]
     fn test_calculate_depth_for_each_symbol_with_right_growing_and_onestar_pattern_replaced_tree() {
-        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        tree.reorder_right_growing();
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         tree.replace_onestar();
         let symbol_depths = calculate_depth_for_each_symbol(&tree);
         let expected_symbol_depths = [3, 5, 4, 6, 3, 4, 4, 4, 3, 3, 2, 2, 1];
@@ -524,7 +512,8 @@ mod test {
 
     #[test]
     fn test_find_first_occurence_of_least_frequent_symbol_node_index() {
-        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         assert_eq!(
             tree.least_frequent_symbol_node_index, 1,
             "First occurence of node with the smallest frequency should be selected."
@@ -534,8 +523,8 @@ mod test {
     #[test]
     fn test_find_first_occurence_of_least_frequent_symbol_node_index_after_onestar_pattern_replacement(
     ) {
-        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        tree.reorder_right_growing();
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         tree.replace_onestar();
         assert_eq!(
             tree.least_frequent_symbol_node_index, 1,
@@ -545,7 +534,8 @@ mod test {
 
     #[test]
     fn test_get_max_depth_under_node() {
-        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         let depth = get_max_depth_under_node(10, &tree);
         assert_eq!(
             depth, 2,
@@ -580,25 +570,9 @@ mod test {
     }
 
     #[test]
-    fn test_higher_frequent_symbols_must_have_less_depth_with_default_tree() {
-        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        let depths = calculate_depth_for_each_symbol(&tree);
-        // symbol with the same frequency as the test symbol should be placed in the more_eq slice,
-        // because they can be placed at the same depth, or if they come later, be placed on a
-        // higher depth.
-        assert_depth_between(&depths, 0, &[4], &[1, 3, 2, 5, 6]);
-        assert_depth_between(&depths, 1, &[2, 5, 6, 0, 4], &[3]);
-        assert_depth_between(&depths, 2, &[6, 0, 4], &[5, 1, 3]);
-        assert_depth_between(&depths, 3, &[2, 5, 6, 0, 4], &[1]);
-        assert_depth_between(&depths, 4, &[], &[1, 3, 2, 5, 6, 0]);
-        assert_depth_between(&depths, 5, &[6, 0, 4], &[1, 3, 2]);
-        assert_depth_between(&depths, 6, &[0, 4], &[1, 3, 2, 5]);
-    }
-
-    #[test]
     fn test_higher_frequent_symbols_must_have_less_depth_with_right_growing_tree() {
-        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        tree.reorder_right_growing();
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         let depths = calculate_depth_for_each_symbol(&tree);
         // symbol with the same frequency as the test symbol should be placed in the more_eq slice,
         // because they can be placed at the same depth, or if they come later, be placed on a
@@ -615,8 +589,8 @@ mod test {
     #[test]
     fn test_higher_frequent_symbols_must_have_less_depth_with_right_growing_and_onestart_pattern_replaced_tree(
     ) {
-        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        tree.reorder_right_growing();
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         tree.replace_onestar();
         let depths = calculate_depth_for_each_symbol(&tree);
         // symbol with the same frequency as the test symbol should be placed in the more_eq slice,
@@ -632,17 +606,9 @@ mod test {
     }
 
     #[test]
-    fn test_each_node_has_correct_index_with_default_tree() {
-        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        for (index, node) in tree.nodes.iter().enumerate() {
-            assert_eq!(index, node.index);
-        }
-    }
-
-    #[test]
     fn test_each_node_has_correct_index_with_right_growing_tree() {
-        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        tree.reorder_right_growing();
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         for (index, node) in tree.nodes.iter().enumerate() {
             assert_eq!(index, node.index);
         }
@@ -650,8 +616,8 @@ mod test {
 
     #[test]
     fn test_each_node_has_correct_index_with_right_growing_and_onestar_pattern_replaced_tree() {
-        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        tree.reorder_right_growing();
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         tree.replace_onestar();
         for (index, node) in tree.nodes.iter().enumerate() {
             assert_eq!(index, node.index);
@@ -676,7 +642,8 @@ mod test {
 
     #[test]
     fn test_huffman_encoder_creation() {
-        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         let coder = HuffmanCoder::new(&tree);
         let table = coder.encoding_table;
         let expected_patterns = HashMap::from([
@@ -724,7 +691,7 @@ mod test {
                 },
             ),
         ]);
-        for table_entry in table.iter() {
+        for table_entry in &table {
             let expected_pattern = expected_patterns.get(&table_entry.symbol).unwrap();
             let actual_pattern = table_entry.pattern;
             assert_eq!(
@@ -744,8 +711,8 @@ mod test {
 
     #[test]
     fn test_coder_encode() {
-        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        tree.reorder_right_growing();
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         tree.replace_onestar();
         let coder = HuffmanCoder::new(&tree);
         let mut buffer = Vec::new();
@@ -765,8 +732,8 @@ mod test {
 
     #[test]
     fn test_coder_encode_illegal_symbol() {
-        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        tree.reorder_right_growing();
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         tree.replace_onestar();
         let coder = HuffmanCoder::new(&tree);
         let mut buffer = Vec::new();
@@ -781,8 +748,8 @@ mod test {
 
     #[test]
     fn test_coder_decode() {
-        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        tree.reorder_right_growing();
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let mut tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN, &mut code_generator);
         tree.replace_onestar();
         let coder = HuffmanCoder::new(&tree);
         let sequence = Vec::from(TEST_BYTE_SEQUENCE);
@@ -802,8 +769,8 @@ mod test {
     #[test]
     fn test_shortest_right_subtree_is_longer_eq_the_longest_left_subtree() {
         let symbols_and_frequencies = &[(1, 4), (2, 4), (3, 6), (4, 6), (5, 7), (6, 9)];
-        let mut tree = HuffmanTree::new(symbols_and_frequencies);
-        tree.reorder_right_growing();
+        let mut code_generator = LengthLimitedHuffmanCodeGenerator::new(10);
+        let tree = HuffmanTree::new(symbols_and_frequencies, &mut code_generator);
         for node in &tree.nodes {
             match node.kind {
                 NodeKind::Inner { left, right } => {
