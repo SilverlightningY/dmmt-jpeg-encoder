@@ -181,8 +181,6 @@ impl<'a, T: Write> Encoder<'a, T> {
     }
 
     fn write_jfif_application_header(&mut self) -> Result<()> {
-        let width_bytes = self.image.width.to_be_bytes();
-        let height_bytes = self.image.height.to_be_bytes();
         #[rustfmt::skip]
         let content = &[
             b'J', b'F', b'I', b'F', b'\0',// Identifier
