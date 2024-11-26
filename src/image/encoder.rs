@@ -275,6 +275,49 @@ mod tests {
         let mut encoder = Encoder::new(&output_image, &mut output);
         encoder.write_huffman_tables().unwrap();
         println!("{:?}", output);
-        assert_eq!(output[0..4], [0xFF, 0xC4, 0x00, 0x1A])
+        let mut count = 0;
+        while count < output.len() {
+            assert_eq!(output[count], 0xFF);
+            assert_eq!(output[count + 1], 0xC4);
+            let skip = [output[count + 2], output[count + 3]];
+            count += u16::from_le_bytes(skip) as usize;
+        }
+    }
+    #[test]
+    fn test_start_of_frame() {
+        let output_image = init_output_image();
+        let mut output = Vec::new();
+        let mut encoder = Encoder::new(&output_image, &mut output);
+        encoder.write_start_of_frame().unwrap();
+        println!("{:?}", output);
+
+        let width_bytes = (output_image.width as u16).to_be_bytes();
+        let height_bytes = (output_image.height as u16).to_be_bytes();
+        let subsampling = ChromaSubsamplingPreset::P444;
+        let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (2 / subsampling.vertical_rate());
+        assert_eq!(
+            output,
+            [
+                0xFF,
+                0xC0,
+                0x00,
+                0x11,
+                0x08,
+                height_bytes[0],
+                height_bytes[1],
+                width_bytes[0],
+                width_bytes[1],
+                0x03,
+                0x01,
+                0x42,
+                0x00,
+                0x02,
+                ratio,
+                0x01,
+                0x03,
+                ratio,
+                0x01,
+            ]
+        )
     }
 }
