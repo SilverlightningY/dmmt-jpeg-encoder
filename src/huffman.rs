@@ -1,5 +1,5 @@
 use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd, Reverse};
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, VecDeque};
 use std::fmt;
 use std::io::{Read, Write};
 
@@ -18,10 +18,12 @@ pub struct Node {
     index: usize,
     kind: NodeKind,
 }
+
 pub struct HuffmanTree {
     pub nodes: Vec<Node>,
     pub root_index: usize,
     pub least_frequent_symbol_node_index: usize,
+    leaf_count: usize,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -53,15 +55,15 @@ pub struct HuffmanCoder<'a> {
 // -> the subtree with more depth is always the right child after this call
 // -> if called with right_path=true it will also replace the 1* pattern
 // WARNING: replacing 1* has to take place AFTER swapping (two separate calls)
-fn move_longer_subtree_to_the_right(
+fn replace_one_star_pattern(
     tree: &mut HuffmanTree,
     current_node_index: usize,
-    prevent_one_star_pattern_on_right_subtree: bool,
-) -> u32 {
+    only_ones_taken: bool,
+) {
     let node = tree.nodes[current_node_index];
     match node.kind {
         NodeKind::Leaf { symbol: _ } => {
-            if prevent_one_star_pattern_on_right_subtree {
+            if only_ones_taken {
                 // switch smallest node index into this position
                 tree.nodes[current_node_index].index = tree.least_frequent_symbol_node_index;
                 tree.nodes[tree.least_frequent_symbol_node_index].index = current_node_index;
@@ -72,30 +74,47 @@ fn move_longer_subtree_to_the_right(
                 } else {
                     panic!("Leaf with smallest frequency not a leaf?");
                 }
-                return 2;
             }
-            1
         }
-        NodeKind::OneStar { symbol: _ } => 2,
+        NodeKind::OneStar { symbol: _ } => (),
         NodeKind::Inner {
             left: left_node_index,
             right: right_node_index,
         } => {
-            let left_tree_depth = move_longer_subtree_to_the_right(tree, left_node_index, false);
-            let right_tree_depth = move_longer_subtree_to_the_right(
-                tree,
-                right_node_index,
-                prevent_one_star_pattern_on_right_subtree,
-            );
-            // if wrong order, swap
-            if left_tree_depth > right_tree_depth {
-                tree.nodes[node.index].kind = NodeKind::Inner {
-                    left: right_node_index,
-                    right: left_node_index,
-                };
-                return left_tree_depth + 1;
-            }
-            right_tree_depth + 1
+            replace_one_star_pattern(tree, left_node_index, false);
+            replace_one_star_pattern(tree, right_node_index, only_ones_taken);
+        }
+    }
+}
+
+fn merge_lists(list1: &[Vec<usize>], list2: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    let mut result_list = list2.to_vec();
+    for (pos, layer) in list1.iter().enumerate() {
+        if pos < result_list.len() {
+            layer.iter().for_each(|&i| result_list[pos].push(i));
+        } else {
+            result_list.push(layer.to_vec());
+        }
+    }
+    let mut final_list = vec![vec![]];
+    final_list.append(&mut result_list);
+    final_list
+}
+
+// returns a list of leafs at each depth level of the tree
+fn leaf_list(root_index: usize, tree: &HuffmanTree) -> Vec<Vec<usize>> {
+    let node = tree.nodes[root_index];
+    match node.kind {
+        NodeKind::OneStar { symbol: _ } => {
+            panic!("reordering needs to happen before replacing the onestar pattern")
+        }
+        NodeKind::Leaf { symbol: _ } => {
+            vec![vec![node.index]]
+        }
+        NodeKind::Inner { left, right } => {
+            let left_leaf_list = leaf_list(left, tree);
+            let right_leaf_list = leaf_list(right, tree);
+            merge_lists(&left_leaf_list, &right_leaf_list)
         }
     }
 }
@@ -107,6 +126,7 @@ impl HuffmanTree {
 
         let mut least_frequent_symbol_node_index = 0;
         let mut smallest_frequency = usize::MAX;
+        let leaf_count = symbols_and_frequencies.len();
         // create the initial nodeset
         for &(symbol, frequency) in symbols_and_frequencies.iter() {
             let node = Node {
@@ -141,15 +161,42 @@ impl HuffmanTree {
             nodes,
             root_index,
             least_frequent_symbol_node_index,
+            leaf_count,
         }
     }
 
     pub fn reorder_right_growing(&mut self) {
-        move_longer_subtree_to_the_right(self, self.root_index, false);
+        // list of leafs with depths
+        let layers = leaf_list(self.root_index, self);
+        self.nodes.truncate(self.leaf_count);
+
+        let mut merging_que = VecDeque::new();
+        let mut future_que = VecDeque::new();
+
+        for current_layer in layers.into_iter().rev() {
+            current_layer.iter().for_each(|i| merging_que.push_back(*i));
+            while merging_que.len() > 1 {
+                let right = self.nodes[merging_que.pop_front().unwrap()];
+                let left = self.nodes[merging_que.pop_front().unwrap()];
+                let node = Node {
+                    frequency: left.frequency + right.frequency,
+                    index: self.nodes.len(),
+                    kind: NodeKind::Inner {
+                        left: left.index,
+                        right: right.index,
+                    },
+                };
+                self.nodes.push(node);
+                future_que.push_back(node.index);
+            }
+            merging_que.extend(future_que.iter());
+            future_que.clear();
+        }
+        self.root_index = merging_que.pop_front().unwrap();
     }
 
     pub fn replace_onestar(&mut self) {
-        move_longer_subtree_to_the_right(self, self.root_index, true);
+        replace_one_star_pattern(self, self.root_index, true);
     }
 }
 
@@ -418,33 +465,30 @@ mod test {
         return_value
     }
 
-    fn get_max_depth_under_node(node_index: usize, tree: &HuffmanTree, depths: &[usize]) -> usize {
+    fn get_max_depth_under_node(node_index: usize, tree: &HuffmanTree) -> usize {
+        get_depth_under_node(node_index, tree, &usize::max)
+    }
+
+    fn get_min_depth_under_node(node_index: usize, tree: &HuffmanTree) -> usize {
+        get_depth_under_node(node_index, tree, &usize::min)
+    }
+
+    fn get_depth_under_node(
+        node_index: usize,
+        tree: &HuffmanTree,
+        predicate: &dyn Fn(usize, usize) -> usize,
+    ) -> usize {
         let root_node = tree.nodes[node_index];
         match root_node.kind {
-            NodeKind::Leaf { symbol: _ } => return 1,
-            NodeKind::OneStar { symbol: _ } => return 2,
-            _ => {}
-        };
-        let mut node_index_stack = vec![node_index];
-        let mut max_depth = depths[node_index];
-        let mut max_depth_index = node_index;
-        while let Some(current_node_index) = node_index_stack.pop() {
-            let current_node = tree.nodes[current_node_index];
-            match current_node.kind {
-                NodeKind::Leaf { symbol: _ } | NodeKind::OneStar { symbol: _ } => {
-                    let current_node_depth = depths[current_node_index];
-                    if current_node_depth > max_depth {
-                        max_depth = current_node_depth;
-                        max_depth_index = current_node_index;
-                    }
-                }
-                NodeKind::Inner { left, right } => {
-                    node_index_stack.push(left);
-                    node_index_stack.push(right);
-                }
+            NodeKind::Leaf { symbol: _ } => 1,
+            NodeKind::Inner { left, right } => {
+                predicate(
+                    get_depth_under_node(left, tree, predicate),
+                    get_depth_under_node(right, tree, predicate),
+                ) + 1
             }
+            NodeKind::OneStar { symbol: _ } => 2,
         }
-        depths[max_depth_index] - depths[node_index] + 1
     }
 
     const SYMBOLS_AND_FREQUENCIES_EVEN_LEN: &[(u32, usize); 6] =
@@ -535,18 +579,17 @@ mod test {
     #[test]
     fn test_get_max_depth_under_node() {
         let tree = HuffmanTree::new(SYMBOLS_AND_FREQUENCIES_ODD_LEN);
-        let symbol_depths = [3, 5, 4, 5, 3, 4, 4, 4, 3, 3, 2, 2, 1];
-        let depth = get_max_depth_under_node(10, &tree, &symbol_depths);
+        let depth = get_max_depth_under_node(10, &tree);
         assert_eq!(
             depth, 2,
             "The depth below a Inner node must be the max depth of the subtree."
         );
-        let depth = get_max_depth_under_node(12, &tree, &symbol_depths);
+        let depth = get_max_depth_under_node(12, &tree);
         assert_eq!(
             depth, 5,
             "The depth below the root node must be the max depth of the tree."
         );
-        let depth = get_max_depth_under_node(3, &tree, &symbol_depths);
+        let depth = get_max_depth_under_node(3, &tree);
         assert_eq!(depth, 1, "The depth below a Leaf must be 1.");
     }
 
@@ -730,7 +773,7 @@ mod test {
     }
 
     const TEST_SYMBOL_SEQUENCE: &[u32] = &[1, 3, 2, 2, 7, 5, 4, 4, 1];
-    const TEST_BYTE_SEQUENCE: &[u8] = &[0b00110111, 0b10111101, 0b01011110, 0b11100000];
+    const TEST_BYTE_SEQUENCE: &[u8] = &[0b00100111, 0b10111101, 0b10011110, 0b11100000];
 
     #[test]
     fn test_coder_encode() {
@@ -786,6 +829,23 @@ mod test {
                 "Symbol does not match at index {}",
                 index
             );
+        }
+    }
+
+    #[test]
+    fn test_shortest_right_subtree_is_longer_eq_the_longest_left_subtree() {
+        let symbols_and_frequencies = &[(1, 4), (2, 4), (3, 6), (4, 6), (5, 7), (6, 9)];
+        let mut tree = HuffmanTree::new(symbols_and_frequencies);
+        tree.reorder_right_growing();
+        for node in &tree.nodes {
+            match node.kind {
+                NodeKind::Inner { left, right } => {
+                    let left_max_depth = get_max_depth_under_node(left, &tree);
+                    let right_min_depth = get_min_depth_under_node(right, &tree);
+                    assert!(right_min_depth >= left_max_depth);
+                }
+                _ => continue,
+            }
         }
     }
 }
