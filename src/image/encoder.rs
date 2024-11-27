@@ -241,7 +241,7 @@ mod tests {
             .write_jfif_application_header(&OUTPUT_IMAGE)
             .unwrap();
         assert_eq!(
-            output[0..18],
+            output,
             [
                 0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', b'\0', 0x01, 0x02, 0x00, 0x00,
                 0x48, 0x00, 0x48, 0, 0
@@ -264,6 +264,7 @@ mod tests {
             count += u16::from_le_bytes(skip) as usize;
         }
     }
+
     #[test]
     fn test_write_start_of_frame() {
         let mut output = Vec::new();
