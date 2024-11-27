@@ -15,29 +15,28 @@ enum NodeKind {
 }
 
 #[derive(Clone, Copy)]
-pub struct Node {
+struct Node {
     frequency: usize,
     index: usize,
     kind: NodeKind,
 }
-
 pub struct HuffmanTree {
-    pub nodes: Vec<Node>,
-    pub root_index: usize,
-    pub least_frequent_symbol_node_index: usize,
+    nodes: Vec<Node>,
+    root_index: usize,
+    least_frequent_symbol_node_index: usize,
     leaf_count: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Max32BitPattern {
+#[derive(Clone, Copy)]
+struct Max32BitPattern {
     buf: u32,
-    pub pos: usize,
+    pos: usize,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct TableEntry {
-    pub pattern: Max32BitPattern,
-    pub symbol: u32,
+#[derive(Clone, Copy)]
+struct TableEntry {
+    pattern: Max32BitPattern,
+    symbol: u32,
 }
 
 #[derive(Debug)]
@@ -49,7 +48,7 @@ pub enum CodingError {
 
 pub struct HuffmanCoder<'a> {
     // this is sorted according to symbol
-    pub encoding_table: Vec<TableEntry>,
+    encoding_table: Vec<TableEntry>,
     tree: &'a HuffmanTree,
 }
 

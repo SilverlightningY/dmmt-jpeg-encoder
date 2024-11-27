@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::huffman::{HuffmanCoder, HuffmanTree};
+use crate::huffman::HuffmanTree;
 use crate::Result;
 use core::panic;
 use std::fmt::Display;
@@ -139,44 +139,21 @@ impl<'a, T: Write> Encoder<'a, T> {
         if index > 3 {
             panic!("Index must be between 0 and 3");
         }
-        let mut table = HuffmanCoder::new(tree);
-        table.encoding_table.sort_by_key(|entry| entry.pattern.pos);
 
-        let table_ident = match kind {
+        let table_id = match kind {
             TableKind::DC => 0b0000_0000,
             TableKind::AC => 0b0001_0000,
         } | (index & 0b0000_0011); // Mask index to ensure max 2 bits
 
-        let mut header: Vec<u8> = vec![0; 17 + table.encoding_table.len()];
-        header[0] = table_ident;
-        for (index, entry) in table.encoding_table.iter().enumerate() {
-            let length = entry.pattern.pos;
-            if length > 0 && length <= 16 {
-                header[length] += 1;
-                header[17 + index] = entry.symbol as u8;
-            }
-        }
+        let header = vec![];
+
         self.write_segment(SegmentMarker::HuffmanTable, &header)
             .map_err(|_| Error::FailedToWriteHuffmanTables)
     }
 
     fn write_huffman_tables(&mut self) -> Result<()> {
         // TODO: get real data from dct
-        let input: &[(u32, usize); 7] =
-            &[(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
-        let tree = HuffmanTree::new(input);
-
-        // Write luma tables
-        self.write_huffman_table(&tree, TableKind::DC, 0)
-            .map_err(|_| Error::FailedToWriteHuffmanTables)?;
-        self.write_huffman_table(&tree, TableKind::AC, 0)
-            .map_err(|_| Error::FailedToWriteHuffmanTables)?;
-
-        // Write chroma tables
-        self.write_huffman_table(&tree, TableKind::DC, 1)
-            .map_err(|_| Error::FailedToWriteHuffmanTables)?;
-        self.write_huffman_table(&tree, TableKind::AC, 1)
-            .map_err(|_| Error::FailedToWriteHuffmanTables)
+        todo!("implement write huffman data");
     }
 
     fn write_jfif_application_header(&mut self, image: &OutputImage) -> Result<()> {
@@ -237,7 +214,7 @@ impl<'a, T: Write> Encoder<'a, T> {
 #[cfg(test)]
 mod tests {
     use crate::image::{
-        ppm_parser::{PPMParser, PPMTokenizer},
+        ppm_parser::{self, PPMTokenizer},
         transformer::JpegTransformer,
         ChannelSubsamplingMethod, ChromaSubsamplingPreset, OutputImage, TransformationOptions,
     };
@@ -246,21 +223,23 @@ mod tests {
 
     fn init_output_image() -> OutputImage {
         let string = "P3 3 2 255 255 0 0   0 255 0   0 0 255 255 255 0  255 0 255  0 255 255";
-        let image = PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
-        let transformer = JpegTransformer::new(&image);
+        let image = ppm_parser::parse_ppm_tokens(PPMTokenizer::new(string.as_bytes())).unwrap();
         let transformation_options = TransformationOptions {
             chroma_subsampling_preset: ChromaSubsamplingPreset::P444,
             bits_per_channel: 8,
             chroma_subsampling_method: ChannelSubsamplingMethod::Skip,
         };
-        transformer.transform(&transformation_options).unwrap()
+        let transformer = JpegTransformer::new(&transformation_options);
+        transformer.transform(&image).unwrap()
     }
     #[test]
     fn test_jfif() {
         let output_image = init_output_image();
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&output_image, &mut output);
-        encoder.write_jfif_application_header().unwrap();
+        let mut encoder = Encoder::new(&mut output);
+        encoder
+            .write_jfif_application_header(&output_image)
+            .unwrap();
         assert_eq!(
             output[0..18],
             [
@@ -271,9 +250,8 @@ mod tests {
     }
     #[test]
     fn test_huffman() {
-        let output_image = init_output_image();
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&output_image, &mut output);
+        let mut encoder = Encoder::new(&mut output);
         encoder.write_huffman_tables().unwrap();
         println!("{:?}", output);
         let mut count = 0;
@@ -288,8 +266,8 @@ mod tests {
     fn test_start_of_frame() {
         let output_image = init_output_image();
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&output_image, &mut output);
-        encoder.write_start_of_frame().unwrap();
+        let mut encoder = Encoder::new(&mut output);
+        encoder.write_start_of_frame(&output_image).unwrap();
         println!("{:?}", output);
 
         let width_bytes = (output_image.width as u16).to_be_bytes();
