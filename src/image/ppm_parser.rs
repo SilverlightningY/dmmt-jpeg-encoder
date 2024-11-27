@@ -57,116 +57,115 @@ impl<R: Read> Iterator for PPMTokenizer<R> {
     }
 }
 
-pub struct PPMParser;
-
 const P3_HEADER_TOKEN_NAME: &str = "P3 Header";
 const WIDTH_HEADER_TOKEN_NAME: &str = "Width Header";
 const HEIGHT_HEADER_TOKEN_NAME: &str = "Height Header";
 const MAX_VALUE_HEADER_TOKEN_NAME: &str = "Max Value Header";
 const COLOR_COMPONENT_VALUE_TOKEN_NAME: &str = "Color Component Value";
 
-impl PPMParser {
-    pub fn parse<R: Iterator<Item = String>>(mut tokenizer: R) -> crate::Result<Image<f32>> {
-        let mut luma: Vec<f32> = Vec::new();
-        let mut chroma_blue: Vec<f32> = Vec::new();
-        let mut chroma_red: Vec<f32> = Vec::new();
+pub fn parse_ppm_tokens<R>(mut tokenizer: R) -> crate::Result<Image<f32>>
+where
+    R: Iterator<Item = String>,
+{
+    let mut luma: Vec<f32> = Vec::new();
+    let mut chroma_blue: Vec<f32> = Vec::new();
+    let mut chroma_red: Vec<f32> = Vec::new();
 
-        let header = tokenizer
-            .next()
-            .ok_or(Error::PPMFileDoesNotContainRequiredToken(
-                P3_HEADER_TOKEN_NAME,
-            ))?;
-        if header != "P3" {
-            return Err(Error::PPMFileDoesNotContainRequiredToken(
-                P3_HEADER_TOKEN_NAME,
-            ));
-        }
-
-        let width: u16 = tokenizer
-            .next()
-            .ok_or(Error::PPMFileDoesNotContainRequiredToken(
-                WIDTH_HEADER_TOKEN_NAME,
-            ))?
-            .parse()
-            .map_err(|_| Error::ParsingOfTokenFailed(WIDTH_HEADER_TOKEN_NAME))?;
-
-        let height: u16 = tokenizer
-            .next()
-            .ok_or(Error::PPMFileDoesNotContainRequiredToken(
-                HEIGHT_HEADER_TOKEN_NAME,
-            ))?
-            .parse()
-            .map_err(|_| Error::ParsingOfTokenFailed(HEIGHT_HEADER_TOKEN_NAME))?;
-        let max: u16 = tokenizer
-            .next()
-            .ok_or(Error::PPMFileDoesNotContainRequiredToken(
-                MAX_VALUE_HEADER_TOKEN_NAME,
-            ))?
-            .parse()
-            .map_err(|_| Error::ParsingOfTokenFailed(MAX_VALUE_HEADER_TOKEN_NAME))?;
-
-        let mut pixel = Vec::with_capacity(3);
-
-        for token in tokenizer {
-            pixel.push(
-                token
-                    .parse()
-                    .map_err(|_| Error::ParsingOfTokenFailed(COLOR_COMPONENT_VALUE_TOKEN_NAME))?,
-            );
-            if pixel.len() == 3 {
-                let col: RangeColorFormat<u16> =
-                    RangeColorFormat::new(max, pixel[0], pixel[1], pixel[2]);
-                let rgb = RGBColorFormat::from(&col);
-                let result: YCbCrColorFormat<f32> = YCbCrColorFormat::from(&rgb);
-                luma.push(result.luma);
-                chroma_blue.push(result.chroma_blue);
-                chroma_red.push(result.chroma_red);
-                pixel.clear();
-            }
-        }
-
-        if !pixel.is_empty() {
-            return Err(Error::IncompletePixelParsed(pixel.len()));
-        }
-
-        if width as usize * height as usize != luma.len() {
-            return Err(Error::MismatchOfSizeBetweenHeaderAndValues);
-        }
-
-        Ok(Image::<f32> {
-            width,
-            height,
-            luma,
-            chroma_blue,
-            chroma_red,
-        })
+    let header = tokenizer
+        .next()
+        .ok_or(Error::PPMFileDoesNotContainRequiredToken(
+            P3_HEADER_TOKEN_NAME,
+        ))?;
+    if header != "P3" {
+        return Err(Error::PPMFileDoesNotContainRequiredToken(
+            P3_HEADER_TOKEN_NAME,
+        ));
     }
+
+    let width: u16 = tokenizer
+        .next()
+        .ok_or(Error::PPMFileDoesNotContainRequiredToken(
+            WIDTH_HEADER_TOKEN_NAME,
+        ))?
+        .parse()
+        .map_err(|_| Error::ParsingOfTokenFailed(WIDTH_HEADER_TOKEN_NAME))?;
+
+    let height: u16 = tokenizer
+        .next()
+        .ok_or(Error::PPMFileDoesNotContainRequiredToken(
+            HEIGHT_HEADER_TOKEN_NAME,
+        ))?
+        .parse()
+        .map_err(|_| Error::ParsingOfTokenFailed(HEIGHT_HEADER_TOKEN_NAME))?;
+    let max: u16 = tokenizer
+        .next()
+        .ok_or(Error::PPMFileDoesNotContainRequiredToken(
+            MAX_VALUE_HEADER_TOKEN_NAME,
+        ))?
+        .parse()
+        .map_err(|_| Error::ParsingOfTokenFailed(MAX_VALUE_HEADER_TOKEN_NAME))?;
+
+    let mut pixel = Vec::with_capacity(3);
+
+    for token in tokenizer {
+        pixel.push(
+            token
+                .parse()
+                .map_err(|_| Error::ParsingOfTokenFailed(COLOR_COMPONENT_VALUE_TOKEN_NAME))?,
+        );
+        if pixel.len() == 3 {
+            let col: RangeColorFormat<u16> =
+                RangeColorFormat::new(max, pixel[0], pixel[1], pixel[2]);
+            let rgb = RGBColorFormat::from(&col);
+            let result: YCbCrColorFormat<f32> = YCbCrColorFormat::from(&rgb);
+            luma.push(result.luma);
+            chroma_blue.push(result.chroma_blue);
+            chroma_red.push(result.chroma_red);
+            pixel.clear();
+        }
+    }
+
+    if !pixel.is_empty() {
+        return Err(Error::IncompletePixelParsed(pixel.len()));
+    }
+
+    if width as usize * height as usize != luma.len() {
+        return Err(Error::MismatchOfSizeBetweenHeaderAndValues);
+    }
+
+    Ok(Image::<f32> {
+        width,
+        height,
+        luma,
+        chroma_blue,
+        chroma_red,
+    })
 }
 
 #[cfg(test)]
 mod test {
-    use crate::error::Error;
+    use crate::{error::Error, image::ppm_parser::parse_ppm_tokens};
 
-    use super::{PPMParser, PPMTokenizer};
+    use super::PPMTokenizer;
 
     #[test]
     fn read_string() {
         let string = "P3\n# Example PPM image string\n3 2\n255\n255 0 0   0 255 0   0 0 255\n255 255 0  255 0 255  0 255 255";
-        let image = PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
+        let image = parse_ppm_tokens(PPMTokenizer::new(string.as_bytes())).unwrap();
         assert!(image.height == 2);
     }
 
     #[test]
     fn read_continuous_string() {
         let string = "P3 3 2 255 255 0 0   0 255 0   0 0 255 255 255 0  255 0 255  0 255 255";
-        let image = PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
+        let image = parse_ppm_tokens(PPMTokenizer::new(string.as_bytes())).unwrap();
         assert!(image.height == 2);
     }
 
     #[test]
     fn read_newline_string() {
         let string = "P3\n# Example PPM image newlines\n3\n2\n255\n255\n0\n0\n0\n255\n0\n0\n0\n255\n255\n255\n0\n255\n0\n255\n0\n255\n255";
-        let image = PPMParser::parse(PPMTokenizer::new(string.as_bytes())).unwrap();
+        let image = parse_ppm_tokens(&mut PPMTokenizer::new(string.as_bytes())).unwrap();
         assert!(image.height == 2);
     }
 
@@ -174,7 +173,7 @@ mod test {
     fn incomplete_pixel() {
         let string = "P3\n3 2 255 0 0 255 0 0";
         if let Err(Error::IncompletePixelParsed(n)) =
-            PPMParser::parse(PPMTokenizer::new(string.as_bytes()))
+            parse_ppm_tokens(PPMTokenizer::new(string.as_bytes()))
         {
             if n != 2 {
                 panic!("Number of parsed pixels should be 2, but was {}", n);
@@ -188,7 +187,7 @@ mod test {
     fn wrong_size() {
         let string = "P3\n3 2 255 0 0 255";
         if let Err(Error::MismatchOfSizeBetweenHeaderAndValues) =
-            PPMParser::parse(PPMTokenizer::new(string.as_bytes()))
+            parse_ppm_tokens(PPMTokenizer::new(string.as_bytes()))
         {
             return;
         };

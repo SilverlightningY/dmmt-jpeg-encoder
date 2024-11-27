@@ -8,7 +8,7 @@ pub use cli::CLIParser;
 use error::Error;
 use image::{
     encoder::Encoder,
-    ppm_parser::{PPMParser, PPMTokenizer},
+    ppm_parser::{parse_ppm_tokens, PPMTokenizer},
     transformer::JpegTransformer,
     ChannelSubsamplingMethod, ChromaSubsamplingPreset, TransformationOptions,
 };
@@ -51,12 +51,12 @@ fn open_output_file(file_path: &Path) -> Result<File> {
 pub fn convert_ppm_to_jpeg(arguments: &Arguments) -> Result<()> {
     let input_file = open_input_file(&arguments.input_file)?;
     let output_file = open_output_file(&arguments.output_file)?;
-    let image = PPMParser::parse(PPMTokenizer::new(BufReader::new(&input_file)))?;
-    let transformer = JpegTransformer::new(&image);
+    let image = parse_ppm_tokens(PPMTokenizer::new(BufReader::new(&input_file)))?;
     let transformation_options = TransformationOptions::from(arguments);
-    let output_image = transformer.transform(&transformation_options)?;
+    let transformer = JpegTransformer::new(&transformation_options);
+    let output_image = transformer.transform(&image)?;
     let mut output_file_writer = BufWriter::new(&output_file);
-    let mut encoder = Encoder::new(&output_image, &mut output_file_writer);
-    encoder.encode()?;
+    let mut encoder = Encoder::new(&mut output_file_writer);
+    encoder.encode(&output_image)?;
     Ok(())
 }
