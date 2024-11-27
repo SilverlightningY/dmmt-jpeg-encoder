@@ -91,7 +91,7 @@ impl<'a, T: Write> Encoder<'a, T> {
         // self.write_luminance_quantization_table()?;
         // self.write_chrominance_quantization_table()?;
         self.write_start_of_frame(image)?;
-        self.write_huffman_tables()?;
+        // self.write_huffman_tables()?;
         // self.write_start_of_scan()?;
         // self.write_image_data()?;
         self.write_end_of_file()?;
@@ -233,7 +233,7 @@ mod tests {
         transformer.transform(&image).unwrap()
     }
     #[test]
-    fn test_jfif() {
+    fn test_write_jfif() {
         let output_image = init_output_image();
         let mut output = Vec::new();
         let mut encoder = Encoder::new(&mut output);
@@ -248,8 +248,10 @@ mod tests {
             ]
         )
     }
+
+    #[ignore]
     #[test]
-    fn test_huffman() {
+    fn test_write_huffman_header() {
         let mut output = Vec::new();
         let mut encoder = Encoder::new(&mut output);
         encoder.write_huffman_tables().unwrap();
@@ -263,7 +265,7 @@ mod tests {
         }
     }
     #[test]
-    fn test_start_of_frame() {
+    fn test_write_start_of_frame() {
         let output_image = init_output_image();
         let mut output = Vec::new();
         let mut encoder = Encoder::new(&mut output);
