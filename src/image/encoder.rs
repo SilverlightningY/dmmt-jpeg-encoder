@@ -221,24 +221,24 @@ mod tests {
 
     use super::Encoder;
 
-    fn init_output_image() -> OutputImage {
-        let string = "P3 3 2 255 255 0 0   0 255 0   0 0 255 255 255 0  255 0 255  0 255 255";
-        let image = ppm_parser::parse_ppm_tokens(PPMTokenizer::new(string.as_bytes())).unwrap();
-        let transformation_options = TransformationOptions {
-            chroma_subsampling_preset: ChromaSubsamplingPreset::P444,
-            bits_per_channel: 8,
-            chroma_subsampling_method: ChannelSubsamplingMethod::Skip,
-        };
-        let transformer = JpegTransformer::new(&transformation_options);
-        transformer.transform(&image).unwrap()
-    }
+    const OUTPUT_IMAGE: OutputImage = OutputImage {
+        width: 3,
+        height: 2,
+        chroma_subsampling_preset: ChromaSubsamplingPreset::P444,
+        bits_per_channel: 8,
+        subsampling_method: ChannelSubsamplingMethod::Skip,
+        luma_ac_huffman: Vec::new(),
+        luma_dc_huffman: Vec::new(),
+        chroma_ac_huffman: Vec::new(),
+        chroma_dc_huffman: Vec::new(),
+    };
+
     #[test]
     fn test_write_jfif() {
-        let output_image = init_output_image();
         let mut output = Vec::new();
         let mut encoder = Encoder::new(&mut output);
         encoder
-            .write_jfif_application_header(&output_image)
+            .write_jfif_application_header(&OUTPUT_IMAGE)
             .unwrap();
         assert_eq!(
             output[0..18],
@@ -266,14 +266,13 @@ mod tests {
     }
     #[test]
     fn test_write_start_of_frame() {
-        let output_image = init_output_image();
         let mut output = Vec::new();
         let mut encoder = Encoder::new(&mut output);
-        encoder.write_start_of_frame(&output_image).unwrap();
+        encoder.write_start_of_frame(&OUTPUT_IMAGE).unwrap();
         println!("{:?}", output);
 
-        let width_bytes = (output_image.width as u16).to_be_bytes();
-        let height_bytes = (output_image.height as u16).to_be_bytes();
+        let width_bytes = (OUTPUT_IMAGE.width).to_be_bytes();
+        let height_bytes = (OUTPUT_IMAGE.height).to_be_bytes();
         let subsampling = ChromaSubsamplingPreset::P444;
         let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (2 / subsampling.vertical_rate());
         assert_eq!(
