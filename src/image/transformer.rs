@@ -17,10 +17,10 @@ impl<'a, T> JpegTransformer<'a, T> {
             chroma_subsampling_preset: options.chroma_subsampling_preset,
             bits_per_channel: options.bits_per_channel,
             subsampling_method: options.chroma_subsampling_method,
-            luma_ac_huffman: vec![],
-            luma_dc_huffman: vec![],
-            chroma_ac_huffman: vec![],
-            chroma_dc_huffman: vec![],
+            luma_ac_huffman: Vec::new(),
+            luma_dc_huffman: Vec::new(),
+            chroma_ac_huffman: Vec::new(),
+            chroma_dc_huffman: Vec::new(),
         })
     }
 }
