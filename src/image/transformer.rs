@@ -1,22 +1,22 @@
 use super::{Image, OutputImage, TransformationOptions};
 use crate::Result;
 
-pub struct JpegTransformer<'a, T> {
-    image: &'a Image<T>,
+pub struct JpegTransformer<'a> {
+    options: &'a TransformationOptions,
 }
 
-impl<'a, T> JpegTransformer<'a, T> {
-    pub fn new(image: &'a Image<T>) -> Self {
-        JpegTransformer { image }
+impl<'a> JpegTransformer<'a> {
+    pub fn new(options: &'a TransformationOptions) -> Self {
+        JpegTransformer { options }
     }
 
-    pub fn transform(&self, options: &TransformationOptions) -> Result<OutputImage> {
+    pub fn transform<T>(&self, image: &Image<T>) -> Result<OutputImage> {
         Ok(OutputImage {
-            width: self.image.width,
-            height: self.image.height,
-            chroma_subsampling_preset: options.chroma_subsampling_preset,
-            bits_per_channel: options.bits_per_channel,
-            subsampling_method: options.chroma_subsampling_method,
+            width: image.width,
+            height: image.height,
+            chroma_subsampling_preset: self.options.chroma_subsampling_preset,
+            bits_per_channel: self.options.bits_per_channel,
+            subsampling_method: self.options.chroma_subsampling_method,
             luma_ac_huffman: Vec::new(),
             luma_dc_huffman: Vec::new(),
             chroma_ac_huffman: Vec::new(),
