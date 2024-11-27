@@ -15,13 +15,13 @@ pub struct BitWriter<'a, T: Write> {
 
 impl<'a, T: Write> BitWriter<'a, T> {
     /// flush_bit: if 1, pad with 1's until byte border on flush (0 otherwise)
-    pub fn new(writer: &'a mut T, flush_bit: bool) -> BitWriter<'a, T> {
-        let ival = if flush_bit { 0xFF } else { 0x00 };
+    pub fn new(writer: &'a mut T, flush_with_ones: bool) -> BitWriter<'a, T> {
+        let init_val = if flush_with_ones { 0xFF } else { 0x00 };
         BitWriter {
             writer,
-            buffer: ival,
+            buffer: init_val,
             buffer_space_used: 0,
-            init_val: ival,
+            init_val,
         }
     }
 

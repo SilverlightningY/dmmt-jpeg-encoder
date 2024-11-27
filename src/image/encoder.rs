@@ -10,7 +10,6 @@ use super::OutputImage;
 use crate::logger;
 
 pub struct Encoder<'a, T> {
-    image: &'a OutputImage,
     writer: &'a mut T,
 }
 
@@ -82,16 +81,16 @@ enum TableKind {
 }
 
 impl<'a, T: Write> Encoder<'a, T> {
-    pub fn new(image: &'a OutputImage, writer: &'a mut T) -> Encoder<'a, T> {
-        Encoder { image, writer }
+    pub fn new(writer: &'a mut T) -> Encoder<'a, T> {
+        Encoder { writer }
     }
 
-    pub fn encode(&mut self) -> Result<()> {
+    pub fn encode(&mut self, image: &OutputImage) -> Result<()> {
         self.write_start_of_file()?;
-        self.write_jfif_application_header()?;
+        self.write_jfif_application_header(image)?;
         // self.write_luminance_quantization_table()?;
         // self.write_chrominance_quantization_table()?;
-        self.write_start_of_frame()?;
+        self.write_start_of_frame(image)?;
         self.write_huffman_tables()?;
         // self.write_start_of_scan()?;
         // self.write_image_data()?;
@@ -180,7 +179,9 @@ impl<'a, T: Write> Encoder<'a, T> {
             .map_err(|_| Error::FailedToWriteHuffmanTables)
     }
 
-    fn write_jfif_application_header(&mut self) -> Result<()> {
+    fn write_jfif_application_header(&mut self, image: &OutputImage) -> Result<()> {
+        let width_bytes = image.width.to_be_bytes();
+        let height_bytes = image.height.to_be_bytes();
         #[rustfmt::skip]
         let content = &[
             b'J', b'F', b'I', b'F', b'\0',// Identifier
@@ -204,14 +205,14 @@ impl<'a, T: Write> Encoder<'a, T> {
             .map_err(|_| Error::FailedToWriteChrominanceQuantizationTable)
     }
 
-    fn write_start_of_frame(&mut self) -> Result<()> {
-        let width_bytes = self.image.width.to_be_bytes();
-        let height_bytes = self.image.height.to_be_bytes();
-        let subsampling = self.image.chroma_subsampling_preset;
+    fn write_start_of_frame(&mut self, image: &OutputImage) -> Result<()> {
+        let width_bytes = image.width.to_be_bytes();
+        let height_bytes = image.height.to_be_bytes();
+        let subsampling = image.chroma_subsampling_preset;
         let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (2 / subsampling.vertical_rate());
         #[rustfmt::skip]
         let content = &[
-            self.image.bits_per_channel,                   // bits per pixel
+            image.bits_per_channel,                   // bits per pixel
             height_bytes[0], height_bytes[1], // image height
             width_bytes[0], width_bytes[1],   // image width
             0x03,                   // components (1 or 3)
