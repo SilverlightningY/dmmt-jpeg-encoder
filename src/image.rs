@@ -59,12 +59,18 @@ impl ChromaSubsamplingPreset {
     }
 }
 
+type SymAndDepth = (u8, usize);
+
 pub struct OutputImage {
     width: u16,
     height: u16,
     chroma_subsampling_preset: ChromaSubsamplingPreset,
     bits_per_channel: u8,
     subsampling_method: ChannelSubsamplingMethod,
+    luma_ac_huffman: Vec<SymAndDepth>,
+    luma_dc_huffman: Vec<SymAndDepth>,
+    chroma_ac_huffman: Vec<SymAndDepth>,
+    chroma_dc_huffman: Vec<SymAndDepth>,
 }
 
 #[derive(Clone, Copy)]
