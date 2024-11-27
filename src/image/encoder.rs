@@ -140,7 +140,7 @@ impl<'a, T: Write> Encoder<'a, T> {
         if index > 3 {
             panic!("Index must be between 0 and 3");
         }
-        let mut table = HuffmanCoder::new(&tree);
+        let mut table = HuffmanCoder::new(tree);
         table.encoding_table.sort_by_key(|entry| entry.pattern.pos);
 
         let table_ident = match kind {
