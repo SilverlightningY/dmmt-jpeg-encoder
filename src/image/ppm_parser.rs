@@ -133,13 +133,7 @@ where
         return Err(Error::MismatchOfSizeBetweenHeaderAndValues);
     }
 
-    Ok(Image::<f32> {
-        width,
-        height,
-        luma,
-        chroma_blue,
-        chroma_red,
-    })
+    Ok(Image::new(width, height, luma, chroma_blue, chroma_red))
 }
 
 #[cfg(test)]
