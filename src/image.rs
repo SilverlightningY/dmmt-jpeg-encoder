@@ -67,9 +67,24 @@ impl<T> ColorChannel<T>
 where
     T: Clone + Copy,
 {
-    fn dot_at(&self, column_index: u16, row_index: u16) -> T {
-        let index = column_index as usize + row_index as usize * self.width as usize;
-        self.dots[index]
+    fn dot(&self, column_index: u16, row_index: u16) -> T {
+        let index = column_index + row_index * self.width;
+        self.dots[index as usize]
+    }
+
+    fn rect(&self, column_index: u16, row_index: u16, width: u16, height: u16) -> Vec<T> {
+        let rect_length = width * height;
+        let mut acc: Vec<T> = Vec::with_capacity(rect_length as usize);
+        let last_column_index = self.width - 1;
+        let last_row_index = self.height - 1;
+        for x in 0..width {
+            let current_column_index = cmp::min(last_column_index, x + column_index);
+            for y in 0..height {
+                let current_row_index = cmp::min(last_row_index, y + row_index);
+                acc.push(self.dot(current_column_index, current_row_index));
+            }
+        }
+        acc
     }
 
     fn subsampling_iter<'a>(
@@ -214,23 +229,14 @@ where
             return None;
         }
         let return_value = match self.subsampling_config.method {
-            ChannelSubsamplingMethod::Skip => {
-                self.channel.dot_at(self.column_index, self.row_index)
-            }
+            ChannelSubsamplingMethod::Skip => self.channel.dot(self.column_index, self.row_index),
             ChannelSubsamplingMethod::Average => {
-                let subsampling_rect_len =
-                    self.subsampling_config.horizontal_rate * self.subsampling_config.vertical_rate;
-                let mut acc: Vec<T> = Vec::with_capacity(subsampling_rect_len as usize);
-                let last_column_index = self.channel.width - 1;
-                let last_row_index = self.channel.height - 1;
-                for x in 0..self.subsampling_config.horizontal_rate {
-                    let column_index = cmp::min(last_column_index, x + self.column_index);
-                    for y in 0..self.subsampling_config.vertical_rate {
-                        let row_index = cmp::min(last_row_index, y + self.row_index);
-                        acc.push(self.channel.dot_at(column_index, row_index));
-                    }
-                }
-                average(&acc)
+                let width = self.subsampling_config.horizontal_rate;
+                let height = self.subsampling_config.vertical_rate;
+                let subsampling_rect =
+                    self.channel
+                        .rect(self.column_index, self.row_index, width, height);
+                average(&subsampling_rect)
             }
         };
         self.column_index += self.subsampling_config.horizontal_rate;
