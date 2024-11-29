@@ -97,7 +97,7 @@ impl HuffmanTableHeader {
     fn new(syms_and_depths: &[SymAndDepth]) -> HuffmanTableHeader {
         let mut lenghts = [0; 16];
         let mut symbols = Vec::new();
-        for &(symbol, depth) in syms_and_depths {
+        for &(symbol, depth) in syms_and_depths.iter().rev() {
             lenghts[depth] += 1;
             symbols.push(symbol);
         }
@@ -169,7 +169,7 @@ impl<'a, T: Write> Encoder<'a, T> {
     }
 
     fn write_huffman_tables(&mut self) -> Result<()> {
-        let syms_and_depths: &[SymAndDepth] = &[(1, 15), (2, 5), (4, 13)];
+        let syms_and_depths: &[SymAndDepth] = &[(1, 4), (5, 4), (2, 4), (4, 3), (3, 2)];
         let tables = HuffmanTableHeader::new(syms_and_depths);
         self.write_huffman_table(TableKind::LUMA_AC, &tables)
             .unwrap();
