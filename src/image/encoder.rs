@@ -1,12 +1,11 @@
 use crate::error::Error;
-use crate::huffman::HuffmanTree;
 use crate::Result;
 use core::panic;
 use std::fmt::Display;
 use std::io;
 use std::io::Write;
 
-use super::OutputImage;
+use super::{OutputImage, SymAndDepth};
 use crate::logger;
 
 pub struct Encoder<'a, T> {
@@ -75,9 +74,35 @@ impl Display for SegmentMarker {
     }
 }
 
+#[derive(Copy, Clone)]
 enum TableKind {
-    AC,
-    DC,
+    LUMA_DC = 0b0000_0000,
+    LUMA_AC = 0b0001_0001,
+    CHROMA_DC = 0b0000_0010,
+    CHROMA_AC = 0b0001_0011,
+}
+
+impl TableKind {
+    fn to_value(&self) -> u8 {
+        *self as u8
+    }
+}
+
+struct HuffmanTableHeader {
+    lenghts: [u8; 16],
+    symbols: Vec<u8>,
+}
+
+impl HuffmanTableHeader {
+    fn new(syms_and_depths: &[SymAndDepth]) -> HuffmanTableHeader {
+        let mut lenghts = [0; 16];
+        let mut symbols = Vec::new();
+        for &(symbol, depth) in syms_and_depths {
+            lenghts[depth] += 1;
+            symbols.push(symbol);
+        }
+        HuffmanTableHeader { lenghts, symbols }
+    }
 }
 
 impl<'a, T: Write> Encoder<'a, T> {
@@ -91,7 +116,7 @@ impl<'a, T: Write> Encoder<'a, T> {
         // self.write_luminance_quantization_table()?;
         // self.write_chrominance_quantization_table()?;
         self.write_start_of_frame(image)?;
-        // self.write_huffman_tables()?;
+        self.write_huffman_tables()?;
         // self.write_start_of_scan()?;
         // self.write_image_data()?;
         self.write_end_of_file()?;
@@ -132,28 +157,27 @@ impl<'a, T: Write> Encoder<'a, T> {
 
     fn write_huffman_table(
         &mut self,
-        tree: &HuffmanTree,
-        kind: TableKind,
-        index: u8,
+        table_kind: TableKind,
+        huffman_info: &HuffmanTableHeader,
     ) -> Result<()> {
-        if index > 3 {
-            panic!("Index must be between 0 and 3");
-        }
-
-        let table_id = match kind {
-            TableKind::DC => 0b0000_0000,
-            TableKind::AC => 0b0001_0000,
-        } | (index & 0b0000_0011); // Mask index to ensure max 2 bits
-
-        let header = vec![];
-
+        let mut header: Vec<u8> = Vec::new();
+        header.push(table_kind.to_value());
+        header.extend(&huffman_info.lenghts);
+        header.extend(&huffman_info.symbols);
         self.write_segment(SegmentMarker::HuffmanTable, &header)
             .map_err(|_| Error::FailedToWriteHuffmanTables)
     }
 
     fn write_huffman_tables(&mut self) -> Result<()> {
-        // TODO: get real data from dct
-        todo!("implement write huffman data");
+        let syms_and_depths: &[SymAndDepth] = &[(1, 15), (2, 5), (4, 13)];
+        let tables = HuffmanTableHeader::new(syms_and_depths);
+        self.write_huffman_table(TableKind::LUMA_AC, &tables)
+            .unwrap();
+        self.write_huffman_table(TableKind::LUMA_DC, &tables)
+            .unwrap();
+        self.write_huffman_table(TableKind::CHROMA_AC, &tables)
+            .unwrap();
+        self.write_huffman_table(TableKind::CHROMA_DC, &tables)
     }
 
     fn write_jfif_application_header(&mut self, image: &OutputImage) -> Result<()> {
@@ -249,7 +273,6 @@ mod tests {
         )
     }
 
-    #[ignore]
     #[test]
     fn test_write_huffman_header() {
         let mut output = Vec::new();
