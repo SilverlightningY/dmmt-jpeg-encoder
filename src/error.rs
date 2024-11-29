@@ -11,6 +11,7 @@ pub enum Error {
     UnableToOpenInputFileForReading(String, std::io::Error),
     UnableToOpenOutputFileForWriting(String, std::io::Error),
     FailedToWriteStartOfFile,
+    FailedToWriteHuffmanTables,
     FailedToWriteEndOfFile,
     FailedToWriteJfifApplicationHeader,
     FailedToWriteLuminanceQuantizationTable,
@@ -71,6 +72,9 @@ impl Display for Error {
             }
             Error::FailedToWriteEndOfFile => {
                 write!(f, "Failed to write end of file control marker")
+            }
+            Error::FailedToWriteHuffmanTables => {
+                write!(f, "Failed to write huffmann tables")
             }
             Error::FailedToWriteJfifApplicationHeader => {
                 write!(f, "Failed to write JFIF application header")
