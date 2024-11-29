@@ -17,6 +17,7 @@ pub mod binary_stream;
 mod cli;
 mod color;
 mod error;
+pub mod huffman;
 mod image;
 mod logger;
 

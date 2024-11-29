@@ -132,9 +132,8 @@ impl<'a, T: Write> Encoder<'a, T> {
         let content = &[
             b'J', b'F', b'I', b'F', b'\0',// Identifier
             0x01, 0x02,             // Version
-            0x00,                   // Density
-            width_bytes[0], width_bytes[1], // X Density
-            height_bytes[0], height_bytes[1], // Y Density
+            0x00,                   // Density unit
+            0x00, 0x48, 0x00, 0x48, // Density (72/0x48 common used value)
             0,                      // X Thumbnail
             0                       // Y Thumbnail
         ];
