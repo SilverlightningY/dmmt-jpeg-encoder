@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::huffman::HuffmanTree;
+use crate::huffman::tree::HuffmanTree;
 use crate::Result;
 use core::panic;
 use std::fmt::Display;

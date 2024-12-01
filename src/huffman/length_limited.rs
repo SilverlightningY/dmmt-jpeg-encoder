@@ -1,7 +1,8 @@
 use std::collections::BinaryHeap;
 use std::iter;
 
-use super::{HuffmanCode, HuffmanCodeGenerator};
+use super::code::HuffmanCode;
+use super::code::HuffmanCodeGenerator;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct Node {
@@ -136,7 +137,7 @@ impl LengthLimitedHuffmanCodeGenerator {}
 
 #[cfg(test)]
 mod test {
-    use crate::huffman::HuffmanCodeGenerator;
+    use super::HuffmanCodeGenerator;
 
     use super::{LengthLimitedHuffmanCodeGenerator, Node, NodeKind};
 
