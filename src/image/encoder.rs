@@ -286,6 +286,7 @@ mod tests {
         let mut output = Vec::new();
         let mut encoder = Encoder::new(&mut output);
         let symbols = [1, 2, 3].to_vec();
+        let symbols2 = [1, 2, 3, 4, 5, 6].to_vec();
         let lengths = [1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         encoder
             .write_huffman_table(
@@ -293,6 +294,16 @@ mod tests {
                 &HuffmanTableHeader { symbols, lengths },
             )
             .unwrap();
+        encoder
+            .write_huffman_table(
+                crate::image::encoder::TableKind::LUMA_DC,
+                &HuffmanTableHeader {
+                    symbols: symbols2,
+                    lengths,
+                },
+            )
+            .unwrap();
+
         println!("{:?}", output);
         let mut count = 0;
         while count < output.len() {
