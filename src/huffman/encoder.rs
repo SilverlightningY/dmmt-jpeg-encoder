@@ -114,13 +114,12 @@ impl<'a, T: Write> HuffmanEncoder<'a, T> {
 impl<'a, T: Write> Write for HuffmanEncoder<'a, T> {
     /* "Ich kenne meine Daten"-Version */
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let mut bytes_written = 0;
         for &s in buf {
             let code = self.symbols_to_code_words[s as usize];
             let bytes = code.0.to_be_bytes();
-            bytes_written += self.writer.write_bits(&bytes, code.1.into())?;
+            self.writer.write_bits(&bytes, code.1.into())?;
         }
-        Ok(bytes_written)
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
@@ -170,8 +169,14 @@ mod test {
         let mut encoder =
             HuffmanEncoder::from_symbols_and_frequencies(&sorted_syms, 10, &mut writer);
 
-        encoder.write(TEST_SYMBOL_SEQUENCE)?;
+        encoder.write_all(TEST_SYMBOL_SEQUENCE)?;
         encoder.flush()?;
+
+        assert_eq!(
+            TEST_BYTE_SEQUENCE.len(),
+            output.iter().len(),
+            "decoded sequence length different from expect"
+        );
 
         for (index, &byte) in output.iter().enumerate() {
             assert_eq!(
