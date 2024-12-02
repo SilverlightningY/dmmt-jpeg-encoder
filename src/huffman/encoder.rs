@@ -74,14 +74,14 @@ impl<'a, T: Write> HuffmanEncoder<'a, T> {
             .zip(symbols.iter().rev())
             .for_each(|(&(sym, _), &(previous_sym, previous_len))| {
                 let previous_code = encoder.symbols_to_code_words[previous_sym as usize].0;
-                let increment = 2 << (max_len - previous_len);
+                let increment = 1 << (max_len - previous_len);
                 let current_code = previous_code + increment;
                 encoder.symbols_to_code_words[sym as usize].0 = current_code;
             });
 
         // left-justify code words in 16 bit integer
         for i in 0..256 {
-            encoder.symbols_to_code_words[i as usize].0 <<= 15 - max_len;
+            encoder.symbols_to_code_words[i as usize].0 <<= 16 - max_len;
         }
 
         encoder
