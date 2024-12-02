@@ -168,7 +168,7 @@ impl<'a, T: Write> Encoder<'a, T> {
             .map_err(|_| Error::FailedToWriteHuffmanTables)
     }
 
-    fn write_huffman_tables(&mut self) -> Result<()> {
+    fn write_all_huffman_tables(&mut self) -> Result<()> {
         let syms_and_depths: &[SymAndDepth] = &[(1, 4), (5, 4), (2, 4), (4, 3), (3, 2)];
         let tables = HuffmanTableHeader::new(syms_and_depths);
         self.write_huffman_table(TableKind::LUMA_AC, &tables)
