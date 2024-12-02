@@ -76,10 +76,10 @@ impl Display for SegmentMarker {
 
 #[derive(Copy, Clone)]
 enum TableKind {
-    LUMA_DC = 0b0000_0000,
-    LUMA_AC = 0b0001_0001,
-    CHROMA_DC = 0b0000_0010,
-    CHROMA_AC = 0b0001_0011,
+    LumaDC = 0b0000_0000,
+    LumaAC = 0b0001_0001,
+    ChromaDC = 0b0000_0010,
+    ChromaAC = 0b0001_0011,
 }
 
 impl TableKind {
@@ -170,22 +170,22 @@ impl<'a, T: Write> Encoder<'a, T> {
 
     fn write_all_huffman_tables(&mut self, image: &OutputImage) -> Result<()> {
         self.write_huffman_table(
-            TableKind::LUMA_AC,
+            TableKind::LumaAC,
             &HuffmanTableHeader::new(&image.luma_ac_huffman),
         )
         .unwrap();
         self.write_huffman_table(
-            TableKind::LUMA_DC,
+            TableKind::LumaDC,
             &HuffmanTableHeader::new(&image.luma_dc_huffman),
         )
         .unwrap();
         self.write_huffman_table(
-            TableKind::CHROMA_AC,
+            TableKind::ChromaAC,
             &HuffmanTableHeader::new(&image.chroma_ac_huffman),
         )
         .unwrap();
         self.write_huffman_table(
-            TableKind::CHROMA_DC,
+            TableKind::ChromaDC,
             &HuffmanTableHeader::new(&image.chroma_dc_huffman),
         )
     }
@@ -248,7 +248,8 @@ impl<'a, T: Write> Encoder<'a, T> {
 #[cfg(test)]
 mod tests {
     use crate::image::{
-        encoder::HuffmanTableHeader, ChannelSubsamplingMethod, ChromaSubsamplingPreset, OutputImage,
+        encoder::{HuffmanTableHeader, TableKind},
+        ChannelSubsamplingMethod, ChromaSubsamplingPreset, OutputImage,
     };
 
     use super::Encoder;
@@ -289,14 +290,11 @@ mod tests {
         let symbols2 = [1, 2, 3, 4, 5, 6].to_vec();
         let lengths = [1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         encoder
-            .write_huffman_table(
-                crate::image::encoder::TableKind::LUMA_DC,
-                &HuffmanTableHeader { symbols, lengths },
-            )
+            .write_huffman_table(TableKind::LumaDC, &HuffmanTableHeader { symbols, lengths })
             .unwrap();
         encoder
             .write_huffman_table(
-                crate::image::encoder::TableKind::LUMA_DC,
+                TableKind::LumaDC,
                 &HuffmanTableHeader {
                     symbols: symbols2,
                     lengths,
