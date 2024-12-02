@@ -16,6 +16,7 @@ use image::{
 pub mod binary_stream;
 mod cli;
 mod color;
+pub mod cosine_transform;
 mod error;
 pub mod huffman;
 mod image;
