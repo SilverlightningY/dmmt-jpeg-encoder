@@ -96,7 +96,7 @@ struct HuffmanTableHeader {
 impl HuffmanTableHeader {
     fn new(syms_and_depths: &[SymAndDepth]) -> HuffmanTableHeader {
         let mut lenghts = [0; 16];
-        let mut symbols = Vec::new();
+        let mut symbols = Vec::with_capacity(syms_and_depths.len());
         for &(symbol, depth) in syms_and_depths.iter().rev() {
             lenghts[depth] += 1;
             symbols.push(symbol);
