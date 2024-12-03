@@ -1,12 +1,14 @@
-use dmmt_jpeg_encoder::binary_stream::BitWriter;
-use dmmt_jpeg_encoder::huffman::encoder::HuffmanEncoder;
-use dmmt_jpeg_encoder::huffman::length_limited::LengthLimitedHuffmanCodeGenerator;
-// use dmmt_jpeg_encoder::huffman::{CodingError, HuffmanCoder, HuffmanTree};
-use dmmt_jpeg_encoder::huffman::tree::HuffmanTree;
 use std::io::Write;
 
+use dmmt_jpeg_encoder::binary_stream::BitWriter;
+use dmmt_jpeg_encoder::huffman::code::HuffmanCodeGenerator;
+use dmmt_jpeg_encoder::huffman::encoder::HuffmanEncoder;
+use dmmt_jpeg_encoder::huffman::length_limited::LengthLimitedHuffmanCodeGenerator;
+use dmmt_jpeg_encoder::huffman::tree::HuffmanTree;
+use dmmt_jpeg_encoder::huffman::SymbolFrequency;
+
 fn main() {
-    let syms_and_freqs: Vec<(u8, usize)> = vec![
+    let syms_and_freqs = [
         (0, 13),
         (1, 14),
         (2, 25),
@@ -16,19 +18,23 @@ fn main() {
         (6, 120),
     ];
 
-    let mut output: Vec<u8> = Vec::new();
-    let mut writer = BitWriter::new(&mut output, true);
-    let mut encoder = HuffmanEncoder::from_symbols_and_frequencies(&syms_and_freqs, 4, &mut writer);
-
     let mut generator = LengthLimitedHuffmanCodeGenerator::new(4);
     let mut tree = HuffmanTree::new(&syms_and_freqs, &mut generator);
     tree.replace_onestar();
+
+    let syms_and_freqs = syms_and_freqs.map(SymbolFrequency::from);
+
+    let mut output: Vec<u8> = Vec::new();
+    let mut writer = BitWriter::new(&mut output, true);
+    let mut code_lengths = generator.generate_with_symbols(&syms_and_freqs);
+    code_lengths[0].length += 1;
+    let mut encoder = HuffmanEncoder::new(&mut writer, &code_lengths);
 
     /* an example sequence to encode that roughly matches the relative frequencies at the beginning */
     let encoding_sequence: Vec<u8> = vec![
         0, 6, 4, 4, 3, 3, 6, 5, 6, 2, 6, 1, 6, 5, 3, 5, 6, 6, 2, 2, 6, 5, 6, 5, 4, 1,
     ];
-    let _ = encoder.write(&encoding_sequence);
+    let _ = encoder.write_all(&encoding_sequence);
     let _ = encoder.flush();
 
     /* have the tree decode the sequence */
