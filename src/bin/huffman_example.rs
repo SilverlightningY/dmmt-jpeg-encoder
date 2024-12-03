@@ -1,29 +1,47 @@
-use dmmt_jpeg_encoder::binary_stream::BitWriter;
-use dmmt_jpeg_encoder::huffman::length_limited::LengthLimitedHuffmanCodeGenerator;
-use dmmt_jpeg_encoder::huffman::{CodingError, HuffmanCoder, HuffmanTree};
 use std::io::Write;
 
-fn main() -> Result<(), CodingError> {
-    // symbol-frequency pairs
-    let syms_and_freqs = &[(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
-    let mut generator = LengthLimitedHuffmanCodeGenerator::new(3);
-    let mut tree = HuffmanTree::new(syms_and_freqs, &mut generator);
-    println!("huffman tree\n{}", tree);
+use dmmt_jpeg_encoder::binary_stream::BitWriter;
+use dmmt_jpeg_encoder::huffman::code::HuffmanCodeGenerator;
+use dmmt_jpeg_encoder::huffman::encoder::HuffmanEncoder;
+use dmmt_jpeg_encoder::huffman::length_limited::LengthLimitedHuffmanCodeGenerator;
+use dmmt_jpeg_encoder::huffman::tree::HuffmanTree;
+use dmmt_jpeg_encoder::huffman::SymbolFrequency;
+
+fn main() {
+    let syms_and_freqs = [
+        (0, 13),
+        (1, 14),
+        (2, 25),
+        (3, 26),
+        (4, 28),
+        (5, 60),
+        (6, 120),
+    ];
+
+    let mut generator = LengthLimitedHuffmanCodeGenerator::new(4);
+    let mut tree = HuffmanTree::new(&syms_and_freqs, &mut generator);
     tree.replace_onestar();
-    println!("right-growing huffman without 1*\n{}", tree);
 
-    let sequence_to_encode = &[3, 3, 3, 2, 1, 4, 5, 3, 3, 3];
+    let syms_and_freqs = syms_and_freqs.map(SymbolFrequency::from);
 
-    let coder = HuffmanCoder::new(&tree);
-    let mut encoded_buffer: Vec<u8> = Vec::new();
-    let mut writer = BitWriter::new(&mut encoded_buffer, true);
-    coder.encode_sequence(sequence_to_encode, &mut writer)?;
-    let _ = writer.flush();
-    println!("sequence to encode\n{:?}", sequence_to_encode);
-    println!("encoded sequence\n{:?}", encoded_buffer);
+    let mut output: Vec<u8> = Vec::new();
+    let mut writer = BitWriter::new(&mut output, true);
+    let mut code_lengths = generator.generate_with_symbols(&syms_and_freqs);
+    code_lengths[0].length += 1;
+    let mut encoder = HuffmanEncoder::new(&mut writer, &code_lengths);
 
-    let mut decoded_buffer: Vec<u32> = Vec::new();
-    coder.decode_sequence(&mut encoded_buffer.as_slice(), &mut decoded_buffer)?;
-    println!("decoded sequence\n{:?}", decoded_buffer);
-    Ok(())
+    /* an example sequence to encode that roughly matches the relative frequencies at the beginning */
+    let encoding_sequence: Vec<u8> = vec![
+        0, 6, 4, 4, 3, 3, 6, 5, 6, 2, 6, 1, 6, 5, 3, 5, 6, 6, 2, 2, 6, 5, 6, 5, 4, 1,
+    ];
+    let _ = encoder.write_all(&encoding_sequence);
+    let _ = encoder.flush();
+
+    /* have the tree decode the sequence */
+    let mut decoded: Vec<u8> = Vec::new();
+    let _ = tree.decode_sequence(&mut output.as_slice(), &mut decoded);
+
+    println!("encoded sequence \n {:?}", output);
+    println!("original sequence \n {:?}", encoding_sequence);
+    println!("decoded sequence \n {:?}", decoded);
 }
