@@ -7,7 +7,7 @@ use std::ops::DivAssign;
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
 
-use crate::huffman::SymbolFrequency;
+use crate::huffman::SymbolCodeLength;
 use crate::Arguments;
 
 pub mod encoder;
@@ -145,10 +145,10 @@ pub struct OutputImage {
     chroma_subsampling_preset: ChromaSubsamplingPreset,
     bits_per_channel: u8,
     subsampling_method: ChannelSubsamplingMethod,
-    luma_ac_huffman: Vec<SymbolFrequency>,
-    luma_dc_huffman: Vec<SymbolFrequency>,
-    chroma_ac_huffman: Vec<SymbolFrequency>,
-    chroma_dc_huffman: Vec<SymbolFrequency>,
+    luma_ac_huffman: Vec<SymbolCodeLength>,
+    luma_dc_huffman: Vec<SymbolCodeLength>,
+    chroma_ac_huffman: Vec<SymbolCodeLength>,
+    chroma_dc_huffman: Vec<SymbolCodeLength>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
