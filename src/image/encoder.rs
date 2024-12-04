@@ -1,5 +1,7 @@
-use crate::error::Error;
+use crate::huffman::code::HuffmanCodeGenerator;
+use crate::huffman::SymbolFrequency;
 use crate::Result;
+use crate::{error::Error, huffman::length_limited::LengthLimitedHuffmanCodeGenerator};
 use core::panic;
 use std::fmt::Display;
 use std::io;
@@ -89,19 +91,27 @@ impl TableKind {
 }
 
 struct HuffmanTableHeader {
-    lengths: [u8; 16],
+    depths: [u8; 16],
     symbols: Vec<u8>,
+    frequencies: Vec<usize>,
 }
 
 impl HuffmanTableHeader {
-    fn new(syms_and_depths: &[SymAndDepth]) -> HuffmanTableHeader {
-        let mut lengths = [0; 16];
-        let mut symbols = Vec::with_capacity(syms_and_depths.len());
-        for &(symbol, depth) in syms_and_depths.iter().rev() {
-            lengths[depth] += 1;
-            symbols.push(symbol);
+    fn new(symfreqs: &[SymbolFrequency]) -> HuffmanTableHeader {
+        // symfreqs.sort_by_key(|f| f.frequency);
+        let (symbols, frequencies): (Vec<u8>, Vec<usize>) =
+            symfreqs.iter().map(|sf| (sf.symbol, sf.frequency)).unzip();
+        let mut depths = [0; 16];
+        let mut generator = LengthLimitedHuffmanCodeGenerator::new(16);
+        let code_lengths = generator.generate(&frequencies);
+        for item in code_lengths {
+            depths[item] += 1;
         }
-        HuffmanTableHeader { lengths, symbols }
+        HuffmanTableHeader {
+            depths,
+            symbols,
+            frequencies: frequencies.to_vec(),
+        }
     }
 }
 
@@ -162,7 +172,7 @@ impl<'a, T: Write> Encoder<'a, T> {
     ) -> Result<()> {
         let mut header: Vec<u8> = Vec::new();
         header.push(table_kind.to_value());
-        header.extend(&huffman_info.lengths);
+        header.extend(&huffman_info.depths);
         header.extend(&huffman_info.symbols);
         self.write_segment(SegmentMarker::HuffmanTable, &header)
             .map_err(|_| Error::FailedToWriteHuffmanTables)
@@ -247,9 +257,12 @@ impl<'a, T: Write> Encoder<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::image::{
-        encoder::{HuffmanTableHeader, TableKind},
-        ChannelSubsamplingMethod, ChromaSubsamplingPreset, OutputImage,
+    use crate::{
+        huffman::SymbolFrequency,
+        image::{
+            encoder::{HuffmanTableHeader, TableKind},
+            ChannelSubsamplingMethod, ChromaSubsamplingPreset, OutputImage,
+        },
     };
 
     use super::Encoder;
@@ -286,20 +299,31 @@ mod tests {
     fn test_write_huffman_header() {
         let mut output = Vec::new();
         let mut encoder = Encoder::new(&mut output);
-        let symbols = [1, 2, 3].to_vec();
-        let symbols2 = [1, 2, 3, 4, 5, 6].to_vec();
-        let lengths = [1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut symfreqs: Vec<SymbolFrequency> = vec![
+            SymbolFrequency {
+                symbol: 3,
+                frequency: 2,
+            },
+            SymbolFrequency {
+                symbol: 4,
+                frequency: 3,
+            },
+            SymbolFrequency {
+                symbol: 2,
+                frequency: 4,
+            },
+            SymbolFrequency {
+                symbol: 5,
+                frequency: 4,
+            },
+            SymbolFrequency {
+                symbol: 1,
+                frequency: 4,
+            },
+        ];
+
         encoder
-            .write_huffman_table(TableKind::LumaDC, &HuffmanTableHeader { symbols, lengths })
-            .unwrap();
-        encoder
-            .write_huffman_table(
-                TableKind::LumaDC,
-                &HuffmanTableHeader {
-                    symbols: symbols2,
-                    lengths,
-                },
-            )
+            .write_huffman_table(TableKind::LumaDC, &HuffmanTableHeader::new(&symfreqs))
             .unwrap();
 
         println!("{:?}", output);
