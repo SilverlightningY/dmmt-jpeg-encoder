@@ -173,10 +173,23 @@ mod test {
         let _ = HuffmanEncoder::new(&mut writer, &symbols);
     }
 
-    const TEST_SYMBOL_SEQUENCE: &[u8] = &[1, 3, 2, 2, 7, 5, 4, 4, 1];
-    const TEST_BYTE_SEQUENCE: &[u8] = &[0b01110111, 0b10111101, 0b00001110, 0b11100100];
-    const SYMBOLS_AND_FREQUENCIES_ODD_LEN: &[(u8, usize); 7] =
-        &[(1, 17), (2, 3), (3, 12), (4, 3), (5, 18), (6, 12), (7, 13)];
+    const TEST_SYMBOL_SEQUENCE: &[u8] = &[
+        27, 17, 7, 31, 22, 12, 2, 29, 21, 19, 11, 9, 1, 30, 25, 15, 5, 24, 14, 4, 20, 10, 26, 23,
+        16, 13, 6, 3, 32, 28, 18, 8,
+    ];
+    const TEST_BYTE_SEQUENCE: &[u8] = &[
+        0b00000100, 0b01101000, 0b10101100, 0b11110000, 0b10001100, 0b10100111, 0b01001010,
+        0b11011010, 0b11101011, 0b11110000, 0b11000111, 0b00101100, 0b11110100, 0b11010111,
+        0b01101101, 0b11111000, 0b11100111, 0b10101110, 0b11111100, 0b11110111, 0b11101111,
+        0b11000000,
+    ];
+
+    #[rustfmt::skip]
+    const SYMBOLS_AND_FREQUENCIES_ODD_LEN: &[(u8, usize); 32] = &[
+        (1, 14), (2, 30), (3, 4), (4, 7), (5, 9), (6, 4), (7, 42), (8, 1), (9, 14), (10, 5), 
+        (11, 14), (12, 30), (13, 4), (14, 7), (15, 9), (16, 4), (17, 42), (18, 1), (19, 14), 
+        (20,5), (21, 14), (22, 30), (23, 4), (24, 7), (25, 9), (26, 4), (27, 42), (28, 1), 
+        (29, 14), (30, 12), (31, 32), (32, 1)];
 
     fn create_test_encoder<'a, T: Write>(
         sorted_frequencies: &[SymbolFrequency],
@@ -196,7 +209,7 @@ mod test {
 
         let mut output: Vec<u8> = Vec::new();
         let mut writer = BitWriter::new(&mut output, false);
-        let mut encoder = create_test_encoder(&sorted_syms, 10, &mut writer);
+        let mut encoder = create_test_encoder(&sorted_syms, 6, &mut writer);
 
         encoder.write_all(TEST_SYMBOL_SEQUENCE)?;
         encoder.flush()?;
