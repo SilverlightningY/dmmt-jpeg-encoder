@@ -18,7 +18,7 @@ impl SymbolCodeLength {
     }
 
     pub fn len(&self) -> usize {
-        self.length as usize
+        self.length
     }
 
     pub fn is_empty(&self) -> bool {
@@ -35,7 +35,6 @@ impl From<(Symbol, usize)> for SymbolCodeLength {
     }
 }
 
-#[derive(Clone)]
 pub struct SymbolFrequency {
     pub symbol: Symbol,
     pub frequency: usize,

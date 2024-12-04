@@ -226,10 +226,9 @@ impl<'a, T: Write> Encoder<'a, T> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        huffman::{SymbolCodeLength, SymbolFrequency},
+        huffman::SymbolCodeLength,
         image::{
-            encoder::TableKind, transformer::JpegTransformer, ChannelSubsamplingMethod,
-            ChromaSubsamplingPreset, OutputImage,
+            encoder::TableKind, ChannelSubsamplingMethod, ChromaSubsamplingPreset, OutputImage,
         },
     };
 
@@ -274,7 +273,6 @@ mod tests {
             .write_huffman_table(TableKind::LumaDC, &symdepths)
             .unwrap();
 
-        println!("{:?}", output);
         let mut count = 0;
         while count < output.len() {
             assert_eq!(output[count], 0xFF);
@@ -289,7 +287,6 @@ mod tests {
         let mut output = Vec::new();
         let mut encoder = Encoder::new(&mut output);
         encoder.write_start_of_frame(&OUTPUT_IMAGE).unwrap();
-        println!("{:?}", output);
 
         let width_bytes = (OUTPUT_IMAGE.width).to_be_bytes();
         let height_bytes = (OUTPUT_IMAGE.height).to_be_bytes();
