@@ -34,6 +34,7 @@ impl From<(Symbol, usize)> for SymbolCodeLength {
     }
 }
 
+#[derive(Clone)]
 pub struct SymbolFrequency {
     pub symbol: Symbol,
     pub frequency: usize,

@@ -1,5 +1,5 @@
 use super::{Image, OutputImage, SymAndDepth, TransformationOptions};
-use crate::Result;
+use crate::{huffman::SymbolFrequency, Result};
 
 pub struct JpegTransformer<'a> {
     options: &'a TransformationOptions,
@@ -11,7 +11,28 @@ impl<'a> JpegTransformer<'a> {
     }
 
     pub fn transform<T>(&self, image: &Image<T>) -> Result<OutputImage> {
-        let syms_and_depths: Vec<SymAndDepth> = [(1, 4), (5, 4), (2, 4), (4, 3), (3, 2)].to_vec();
+        let syms_and_depths: Vec<SymbolFrequency> = vec![
+            SymbolFrequency {
+                symbol: 3,
+                frequency: 2,
+            },
+            SymbolFrequency {
+                symbol: 4,
+                frequency: 3,
+            },
+            SymbolFrequency {
+                symbol: 2,
+                frequency: 4,
+            },
+            SymbolFrequency {
+                symbol: 5,
+                frequency: 4,
+            },
+            SymbolFrequency {
+                symbol: 1,
+                frequency: 4,
+            },
+        ];
 
         Ok(OutputImage {
             width: image.width,
