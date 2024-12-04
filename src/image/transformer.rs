@@ -1,4 +1,4 @@
-use super::{Image, OutputImage, SymAndDepth, TransformationOptions};
+use super::{Image, OutputImage, TransformationOptions};
 use crate::{huffman::SymbolFrequency, Result};
 
 pub struct JpegTransformer<'a> {

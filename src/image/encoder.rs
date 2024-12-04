@@ -7,7 +7,7 @@ use std::fmt::Display;
 use std::io;
 use std::io::Write;
 
-use super::{OutputImage, SymAndDepth};
+use super::OutputImage;
 use crate::logger;
 
 pub struct Encoder<'a, T> {
@@ -299,7 +299,7 @@ mod tests {
     fn test_write_huffman_header() {
         let mut output = Vec::new();
         let mut encoder = Encoder::new(&mut output);
-        let mut symfreqs: Vec<SymbolFrequency> = vec![
+        let symfreqs: Vec<SymbolFrequency> = vec![
             SymbolFrequency {
                 symbol: 3,
                 frequency: 2,

@@ -139,8 +139,6 @@ impl ChromaSubsamplingPreset {
     }
 }
 
-type SymAndDepth = (u8, usize);
-
 pub struct OutputImage {
     width: u16,
     height: u16,
