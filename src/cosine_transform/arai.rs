@@ -6,12 +6,31 @@ pub struct AraiDiscrete8x8CosineTransformer {}
 
 impl Discrete8x8CosineTransformer for AraiDiscrete8x8CosineTransformer {
     fn transform(values: &[f32; 64]) -> [f32; 64] {
-        let mut output: Vec<f32> = Vec::new();
+        let mut row_pass: Vec<f32> = Vec::new();
         for group in values.chunks_exact(8) {
-            output.append(&mut Self::apply_arai(group.try_into().unwrap()).to_vec());
+            row_pass.append(&mut Self::apply_arai(group.try_into().unwrap()).to_vec());
         }
-        output.try_into().unwrap()
+        let mut column_pass: Vec<f32> = Vec::new();
+        let rotated = rotate_matrix(&mut row_pass);
+        for group in rotated.chunks_exact(8) {
+            column_pass.append(&mut Self::apply_arai(group.try_into().unwrap()).to_vec());
+        }
+        column_pass.try_into().unwrap()
     }
+}
+
+fn rotate_matrix(input: &mut [f32]) -> Vec<f32> {
+    let mut rotated: Vec<f32> = Vec::new();
+    let mut idx = 0;
+    (0..8).for_each(|i| {
+        idx = i;
+        while idx < input.len() {
+            rotated.push(input[idx]);
+            idx += 8
+        }
+    });
+    log::warn!("len: {}", rotated.len());
+    rotated
 }
 
 type Row = [f32; 8];
@@ -136,7 +155,7 @@ impl AraiDiscrete8x8CosineTransformer {
 
 mod test {
     use super::AraiDiscrete8x8CosineTransformer;
-    use crate::cosine_transform::Discrete8x8CosineTransformer;
+    use crate::cosine_transform::{arai::rotate_matrix, Discrete8x8CosineTransformer};
 
     #[rustfmt::skip]
     const TEST_VALUES: [f32; 64] = [
@@ -150,10 +169,30 @@ mod test {
         2.0, 3.0, 4.0, 5.0, 3.0, 4.0, 3.0, 4.0,
     ];
 
+    #[rustfmt::skip]
+    const TEST_VALUES_ROTATED: [f32; 64] = [
+        1.0, 3.0, 3.0, 7.0, 3.0, 4.0, 2.0, 2.0,
+        2.0, 2.0, 4.0, 6.0, 4.0, 3.0, 3.0, 3.0,
+        1.0, 1.0, 3.0, 5.0, 5.0, 2.0, 4.0, 4.0,
+        2.0, 2.0, 2.0, 4.0, 5.0, 3.0, 5.0, 5.0,
+        3.0, 3.0, 3.0, 3.0, 6.0, 4.0, 6.0, 3.0,
+        2.0, 4.0, 4.0, 2.0, 5.0, 5.0, 5.0, 4.0,
+        3.0, 3.0, 5.0, 3.0, 2.0, 4.0, 4.0, 3.0, 
+        2.0, 2.0, 6.0, 2.0, 3.0, 3.0, 3.0, 4.0,
+    ];
+
     #[test]
     fn test_transform() {
         let new = AraiDiscrete8x8CosineTransformer::transform(&TEST_VALUES);
         log::warn!("{:?}", new)
+    }
+
+    #[test]
+    fn test_matrix_rotation() {
+        assert_eq!(
+            TEST_VALUES_ROTATED.to_vec(),
+            rotate_matrix(&mut TEST_VALUES.to_vec())
+        )
     }
 
     #[test]
