@@ -6,6 +6,7 @@ pub mod tree;
 
 pub type Symbol = u8;
 
+#[derive(Debug)]
 pub struct SymbolCodeLength {
     pub symbol: Symbol,
     pub length: usize,
@@ -17,7 +18,7 @@ impl SymbolCodeLength {
     }
 
     pub fn len(&self) -> usize {
-        self.length as usize
+        self.length
     }
 
     pub fn is_empty(&self) -> bool {

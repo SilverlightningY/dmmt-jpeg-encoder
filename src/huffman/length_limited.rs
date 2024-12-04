@@ -38,7 +38,7 @@ impl HuffmanCodeGenerator for LengthLimitedHuffmanCodeGenerator {
     fn generate(&mut self, sorted_frequencies: &[usize]) -> HuffmanCode {
         assert!(
             sorted_frequencies.is_sorted(),
-            "Frequencies must be sorted in descending order"
+            "Frequencies must be sorted in ascending order"
         );
         let code_length = sorted_frequencies.len();
         assert!(

@@ -1,11 +1,12 @@
 use crate::error::Error;
+use crate::huffman::{Symbol, SymbolCodeLength};
 use crate::Result;
 use core::panic;
 use std::fmt::Display;
 use std::io;
 use std::io::Write;
 
-use super::{OutputImage, SymAndDepth};
+use super::OutputImage;
 use crate::logger;
 
 pub struct Encoder<'a, T> {
@@ -83,26 +84,17 @@ enum TableKind {
 }
 
 impl TableKind {
-    fn to_value(&self) -> u8 {
+    fn value(&self) -> u8 {
         *self as u8
     }
 }
 
-struct HuffmanTableHeader {
-    lengths: [u8; 16],
-    symbols: Vec<u8>,
-}
-
-impl HuffmanTableHeader {
-    fn new(syms_and_depths: &[SymAndDepth]) -> HuffmanTableHeader {
-        let mut lengths = [0; 16];
-        let mut symbols = Vec::with_capacity(syms_and_depths.len());
-        for &(symbol, depth) in syms_and_depths.iter().rev() {
-            lengths[depth] += 1;
-            symbols.push(symbol);
-        }
-        HuffmanTableHeader { lengths, symbols }
+fn create_huffman_lenght_header(code_lengths: &[SymbolCodeLength]) -> [u8; 16] {
+    let mut lengths = [0; 16];
+    for item in code_lengths {
+        lengths[item.length - 1] += 1;
     }
+    lengths
 }
 
 impl<'a, T: Write> Encoder<'a, T> {
@@ -158,36 +150,22 @@ impl<'a, T: Write> Encoder<'a, T> {
     fn write_huffman_table(
         &mut self,
         table_kind: TableKind,
-        huffman_info: &HuffmanTableHeader,
+        symdepths: &[SymbolCodeLength],
     ) -> Result<()> {
         let mut header: Vec<u8> = Vec::new();
-        header.push(table_kind.to_value());
-        header.extend(&huffman_info.lengths);
-        header.extend(&huffman_info.symbols);
+        header.push(table_kind.value());
+        header.extend(create_huffman_lenght_header(symdepths));
+        let symbols: Vec<Symbol> = symdepths.iter().rev().map(|i| i.symbol).collect();
+        header.extend(&symbols);
         self.write_segment(SegmentMarker::HuffmanTable, &header)
             .map_err(|_| Error::FailedToWriteHuffmanTables)
     }
 
     fn write_all_huffman_tables(&mut self, image: &OutputImage) -> Result<()> {
-        self.write_huffman_table(
-            TableKind::LumaAC,
-            &HuffmanTableHeader::new(&image.luma_ac_huffman),
-        )
-        .unwrap();
-        self.write_huffman_table(
-            TableKind::LumaDC,
-            &HuffmanTableHeader::new(&image.luma_dc_huffman),
-        )
-        .unwrap();
-        self.write_huffman_table(
-            TableKind::ChromaAC,
-            &HuffmanTableHeader::new(&image.chroma_ac_huffman),
-        )
-        .unwrap();
-        self.write_huffman_table(
-            TableKind::ChromaDC,
-            &HuffmanTableHeader::new(&image.chroma_dc_huffman),
-        )
+        self.write_huffman_table(TableKind::LumaAC, &image.luma_ac_huffman)?;
+        self.write_huffman_table(TableKind::LumaDC, &image.luma_dc_huffman)?;
+        self.write_huffman_table(TableKind::ChromaAC, &image.chroma_ac_huffman)?;
+        self.write_huffman_table(TableKind::ChromaDC, &image.chroma_dc_huffman)
     }
 
     fn write_jfif_application_header(&mut self, image: &OutputImage) -> Result<()> {
@@ -247,9 +225,11 @@ impl<'a, T: Write> Encoder<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::image::{
-        encoder::{HuffmanTableHeader, TableKind},
-        ChannelSubsamplingMethod, ChromaSubsamplingPreset, OutputImage,
+    use crate::{
+        huffman::SymbolCodeLength,
+        image::{
+            encoder::TableKind, ChannelSubsamplingMethod, ChromaSubsamplingPreset, OutputImage,
+        },
     };
 
     use super::Encoder;
@@ -286,23 +266,13 @@ mod tests {
     fn test_write_huffman_header() {
         let mut output = Vec::new();
         let mut encoder = Encoder::new(&mut output);
-        let symbols = [1, 2, 3].to_vec();
-        let symbols2 = [1, 2, 3, 4, 5, 6].to_vec();
-        let lengths = [1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let symdepths =
+            [(3, 2), (4, 2), (8, 4), (2, 4), (5, 4), (1, 4)].map(SymbolCodeLength::from);
+
         encoder
-            .write_huffman_table(TableKind::LumaDC, &HuffmanTableHeader { symbols, lengths })
-            .unwrap();
-        encoder
-            .write_huffman_table(
-                TableKind::LumaDC,
-                &HuffmanTableHeader {
-                    symbols: symbols2,
-                    lengths,
-                },
-            )
+            .write_huffman_table(TableKind::LumaDC, &symdepths)
             .unwrap();
 
-        println!("{:?}", output);
         let mut count = 0;
         while count < output.len() {
             assert_eq!(output[count], 0xFF);
@@ -317,7 +287,6 @@ mod tests {
         let mut output = Vec::new();
         let mut encoder = Encoder::new(&mut output);
         encoder.write_start_of_frame(&OUTPUT_IMAGE).unwrap();
-        println!("{:?}", output);
 
         let width_bytes = (OUTPUT_IMAGE.width).to_be_bytes();
         let height_bytes = (OUTPUT_IMAGE.height).to_be_bytes();
