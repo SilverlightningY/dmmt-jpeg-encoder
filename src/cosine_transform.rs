@@ -1,3 +1,4 @@
+pub mod arai;
 pub mod simple;
 
 pub trait Discrete8x8CosineTransformer {
