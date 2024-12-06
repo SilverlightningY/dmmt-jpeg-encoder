@@ -1,3 +1,4 @@
+use std::cmp;
 use std::iter::Sum;
 use std::ops::AddAssign;
 use std::ops::Div;
@@ -6,6 +7,7 @@ use std::ops::DivAssign;
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
 
+use crate::huffman::SymbolCodeLength;
 use crate::Arguments;
 
 pub mod encoder;
@@ -15,9 +17,87 @@ pub mod transformer;
 pub struct Image<T> {
     width: u16,
     height: u16,
-    luma: Vec<T>,
-    chroma_blue: Vec<T>,
-    chroma_red: Vec<T>,
+    luma: ColorChannel<T>,
+    chroma_blue: ColorChannel<T>,
+    chroma_red: ColorChannel<T>,
+}
+
+impl<T> Image<T> {
+    fn new(width: u16, height: u16, luma: Vec<T>, chroma_blue: Vec<T>, chroma_red: Vec<T>) -> Self {
+        Self {
+            width,
+            height,
+            luma: ColorChannel {
+                width,
+                height,
+                dots: luma,
+            },
+            chroma_blue: ColorChannel {
+                width,
+                height,
+                dots: chroma_blue,
+            },
+            chroma_red: ColorChannel {
+                width,
+                height,
+                dots: chroma_red,
+            },
+        }
+    }
+
+    fn luma_channel(&self) -> &ColorChannel<T> {
+        &self.luma
+    }
+
+    fn chroma_red_channel(&self) -> &ColorChannel<T> {
+        &self.chroma_red
+    }
+
+    fn chroma_blue_channel(&self) -> &ColorChannel<T> {
+        &self.chroma_blue
+    }
+}
+
+struct ColorChannel<T> {
+    dots: Vec<T>,
+    width: u16,
+    height: u16,
+}
+
+impl<T> ColorChannel<T>
+where
+    T: Clone + Copy,
+{
+    fn dot(&self, column_index: u16, row_index: u16) -> T {
+        let index = column_index + row_index * self.width;
+        self.dots[index as usize]
+    }
+
+    fn rect(&self, column_index: u16, row_index: u16, width: u16, height: u16) -> Vec<T> {
+        let rect_length = width * height;
+        let mut acc: Vec<T> = Vec::with_capacity(rect_length as usize);
+        let last_column_index = self.width - 1;
+        let last_row_index = self.height - 1;
+        for x in 0..width {
+            let current_column_index = cmp::min(last_column_index, x + column_index);
+            for y in 0..height {
+                let current_row_index = cmp::min(last_row_index, y + row_index);
+                acc.push(self.dot(current_column_index, current_row_index));
+            }
+        }
+        acc
+    }
+
+    fn subsampling_iter<'a>(
+        &'a self,
+        subsampling_config: &'a ChannelSubsamplingConfig,
+    ) -> ChannelRowView<'a, T> {
+        ChannelRowView {
+            channel: self,
+            subsampling_config,
+            row_index: 0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -65,13 +145,10 @@ pub struct OutputImage {
     chroma_subsampling_preset: ChromaSubsamplingPreset,
     bits_per_channel: u8,
     subsampling_method: ChannelSubsamplingMethod,
-}
-
-#[derive(Clone, Copy)]
-pub enum ChannelIndex {
-    Luma,
-    ChromaBlue,
-    ChromaRed,
+    luma_ac_huffman: Vec<SymbolCodeLength>,
+    luma_dc_huffman: Vec<SymbolCodeLength>,
+    chroma_ac_huffman: Vec<SymbolCodeLength>,
+    chroma_dc_huffman: Vec<SymbolCodeLength>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -93,61 +170,80 @@ impl ValueEnum for ChannelSubsamplingMethod {
     }
 }
 
-struct ChannelSubsamplingInfo<'a, T> {
-    image: &'a Image<T>,
+pub struct ChannelSubsamplingConfig {
     /// vertical subsampling rate
     vertical_rate: u16,
     /// horizontal subsampling rate
     horizontal_rate: u16,
-    channel_index: ChannelIndex,
     /// how to sample the image
     method: ChannelSubsamplingMethod,
 }
 
 /// a potentially subsampled image iterator
-pub struct ChannelView<'a, T> {
-    image: ChannelSubsamplingInfo<'a, T>,
-    /// which image row this iterator is on
-    vertical_pos: i16,
+struct ChannelRowView<'a, T> {
+    subsampling_config: &'a ChannelSubsamplingConfig,
+    row_index: u16,
+    channel: &'a ColorChannel<T>,
 }
 
-pub struct ChannelColumnView<'a, T> {
-    image: ChannelSubsamplingInfo<'a, T>,
-    /// which image column this iterator is on
-    horizontal_pos: i16,
-    vertical_pos: i16,
-}
+impl<'a, T> Iterator for ChannelRowView<'a, T> {
+    type Item = ChannelColumnView<'a, T>;
 
-impl<T> std::ops::Index<ChannelIndex> for Image<T> {
-    type Output = Vec<T>;
-
-    fn index(&self, channel_index: ChannelIndex) -> &Self::Output {
-        match channel_index {
-            ChannelIndex::Luma => &self.luma,
-            ChannelIndex::ChromaBlue => &self.chroma_blue,
-            ChannelIndex::ChromaRed => &self.chroma_red,
+    fn nth(&mut self, n: usize) -> Option<ChannelColumnView<'a, T>> {
+        self.row_index += self.subsampling_config.vertical_rate * n as u16;
+        if self.row_index >= self.channel.height {
+            return None;
         }
+        let return_value = ChannelColumnView {
+            subsampling_config: self.subsampling_config,
+            column_index: 0,
+            row_index: self.row_index,
+            channel: self.channel,
+        };
+        self.row_index += self.subsampling_config.vertical_rate;
+        Some(return_value)
+    }
+
+    fn next(&mut self) -> Option<ChannelColumnView<'a, T>> {
+        self.nth(0)
     }
 }
 
-impl<'a, T> ChannelView<'a, T> {
-    pub fn from_image(
-        image: &'a Image<T>,
-        channel_index: ChannelIndex,
-        vertical_rate: u16,
-        horizontal_rate: u16,
-        method: ChannelSubsamplingMethod,
-    ) -> Self {
-        ChannelView {
-            image: ChannelSubsamplingInfo {
-                image,
-                vertical_rate,
-                horizontal_rate,
-                channel_index,
-                method,
-            },
-            vertical_pos: -(vertical_rate as i16),
+struct ChannelColumnView<'a, T> {
+    subsampling_config: &'a ChannelSubsamplingConfig,
+    column_index: u16,
+    row_index: u16,
+    channel: &'a ColorChannel<T>,
+}
+
+impl<'a, T> Iterator for ChannelColumnView<'a, T>
+where
+    T: Sized + Copy + AddAssign + DivAssign + Sum + From<u16> + Div + Div<Output = T>,
+{
+    type Item = T;
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.column_index += self.subsampling_config.horizontal_rate * n as u16;
+        if self.column_index >= self.channel.width {
+            return None;
         }
+        let return_value = match self.subsampling_config.method {
+            ChannelSubsamplingMethod::Skip => self.channel.dot(self.column_index, self.row_index),
+            ChannelSubsamplingMethod::Average => {
+                let width = self.subsampling_config.horizontal_rate;
+                let height = self.subsampling_config.vertical_rate;
+                let subsampling_rect =
+                    self.channel
+                        .rect(self.column_index, self.row_index, width, height);
+                average(&subsampling_rect)
+            }
+        };
+        self.column_index += self.subsampling_config.horizontal_rate;
+        Some(return_value)
+    }
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.nth(0)
     }
 }
 
@@ -167,43 +263,6 @@ impl From<&Arguments> for TransformationOptions {
     }
 }
 
-impl<T> Image<T> {
-    pub fn channel_view(
-        &self,
-        channel_index: ChannelIndex,
-        vertical_rate: u16,
-        horizontal_rate: u16,
-        method: ChannelSubsamplingMethod,
-    ) -> ChannelView<T> {
-        ChannelView::from_image(self, channel_index, vertical_rate, horizontal_rate, method)
-    }
-}
-
-impl<'a, T> Iterator for ChannelView<'a, T> {
-    type Item = ChannelColumnView<'a, T>;
-    fn nth(&mut self, n: usize) -> Option<ChannelColumnView<'a, T>> {
-        let new_position = self.vertical_pos + (self.image.vertical_rate as usize * (n + 1)) as i16;
-        if new_position >= self.image.image.height as i16 {
-            return None;
-        }
-        self.vertical_pos = new_position;
-        Some(ChannelColumnView {
-            image: ChannelSubsamplingInfo {
-                image: self.image.image,
-                vertical_rate: self.image.vertical_rate,
-                horizontal_rate: self.image.horizontal_rate,
-                channel_index: self.image.channel_index,
-                method: self.image.method,
-            },
-            horizontal_pos: -(self.image.horizontal_rate as i16),
-            vertical_pos: self.vertical_pos,
-        })
-    }
-    fn next(&mut self) -> Option<ChannelColumnView<'a, T>> {
-        self.nth(0)
-    }
-}
-
 fn average<T>(v: &[T]) -> T
 where
     T: Copy + Div<Output = T> + From<u16> + Sum<T>,
@@ -211,77 +270,40 @@ where
     v.iter().copied().sum::<T>() / From::from(v.len() as _)
 }
 
-impl<'a, T> Iterator for ChannelColumnView<'a, T>
-where
-    T: Sized + Copy + AddAssign + DivAssign + Sum + From<u16> + Div + Div<Output = T>,
-{
-    type Item = T;
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let new_position =
-            self.horizontal_pos + (self.image.horizontal_rate as usize * (n + 1)) as i16;
-        if new_position >= self.image.image.width as i16 {
-            return None;
-        }
-        self.horizontal_pos = new_position;
-        match self.image.method {
-            ChannelSubsamplingMethod::Skip => {
-                let index: usize = (self.horizontal_pos
-                    + self.vertical_pos * self.image.image.width as i16)
-                    as usize;
-                Some(self.image.image[self.image.channel_index][index])
-            }
-            ChannelSubsamplingMethod::Average => {
-                let mut acc: Vec<T> = vec![];
-                for x in 0..self.image.horizontal_rate {
-                    let clamped_x =
-                        std::cmp::min(self.image.image.width - 1, x + self.horizontal_pos as u16);
-                    for y in 0..self.image.vertical_rate {
-                        let clamped_y = std::cmp::min(
-                            self.image.image.height - 1,
-                            y + self.vertical_pos as u16,
-                        );
-                        let index: usize =
-                            (clamped_x + clamped_y * self.image.image.width) as usize;
-                        acc.push(self.image.image[self.image.channel_index][index]);
-                    }
-                }
-                Some(average(&acc))
-            }
-        }
-    }
-    fn next(&mut self) -> Option<Self::Item> {
-        self.nth(0)
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use super::{ChannelIndex, ChannelSubsamplingMethod, ChannelView, Image};
+    use crate::image::ChannelSubsamplingConfig;
+
+    use super::{ChannelSubsamplingMethod, Image};
+
+    #[rustfmt::skip]
+    const TEST_CHANNEL_ONE: &[f32] = &[
+         1.0,  2.0,  3.0,  4.0,
+         5.0,  6.0,  7.0,  8.0,
+         9.0, 10.0, 11.0, 12.0,
+        13.0, 14.0, 15.0, 16.0,
+    ];
+
+    const DUMMY_CHANNEL: &[f32] = &[
+        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+    ];
 
     #[test]
     fn no_subsampling_test() {
-        let my_img: Image<f32> = Image {
-            width: 4,
-            height: 4,
-            luma: vec![
-                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
-                16.0,
-            ],
-            chroma_blue: vec![
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ],
-            chroma_red: vec![
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ],
-        };
-
-        let mut my_itr: ChannelView<f32> = ChannelView::from_image(
-            &my_img,
-            ChannelIndex::Luma,
-            1,
-            1,
-            ChannelSubsamplingMethod::Skip,
+        let my_img: Image<f32> = Image::new(
+            4,
+            4,
+            Vec::from(TEST_CHANNEL_ONE),
+            Vec::from(DUMMY_CHANNEL),
+            Vec::from(DUMMY_CHANNEL),
         );
+
+        let subsampling_config = ChannelSubsamplingConfig {
+            horizontal_rate: 1,
+            vertical_rate: 1,
+            method: ChannelSubsamplingMethod::Skip,
+        };
+        let mut my_itr = my_img.luma_channel().subsampling_iter(&subsampling_config);
 
         let val = my_itr
             .nth(1)
@@ -293,28 +315,22 @@ mod test {
 
     #[test]
     fn skip_subsampling_test() {
-        let my_img: Image<f32> = Image {
-            width: 4,
-            height: 4,
-            chroma_blue: vec![
-                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
-                16.0,
-            ],
-            luma: vec![
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ],
-            chroma_red: vec![
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ],
-        };
-
-        let mut my_itr: ChannelView<f32> = ChannelView::from_image(
-            &my_img,
-            ChannelIndex::ChromaBlue,
-            1,
-            2,
-            ChannelSubsamplingMethod::Skip,
+        let my_img: Image<f32> = Image::new(
+            4,
+            4,
+            Vec::from(DUMMY_CHANNEL),
+            Vec::from(TEST_CHANNEL_ONE),
+            Vec::from(DUMMY_CHANNEL),
         );
+
+        let subsampling_config = ChannelSubsamplingConfig {
+            horizontal_rate: 2,
+            vertical_rate: 1,
+            method: ChannelSubsamplingMethod::Skip,
+        };
+        let mut my_itr = my_img
+            .chroma_blue_channel()
+            .subsampling_iter(&subsampling_config);
 
         let val = my_itr
             .nth(1)
@@ -326,28 +342,22 @@ mod test {
 
     #[test]
     fn average_subsampling_test() {
-        let my_img: Image<f32> = Image {
-            width: 4,
-            height: 4,
-            chroma_blue: vec![
-                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
-                16.0,
-            ],
-            luma: vec![
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ],
-            chroma_red: vec![
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ],
-        };
-
-        let mut my_itr: ChannelView<f32> = ChannelView::from_image(
-            &my_img,
-            ChannelIndex::ChromaBlue,
-            2,
-            1,
-            ChannelSubsamplingMethod::Average,
+        let my_img: Image<f32> = Image::new(
+            4,
+            4,
+            Vec::from(DUMMY_CHANNEL),
+            Vec::from(TEST_CHANNEL_ONE),
+            Vec::from(DUMMY_CHANNEL),
         );
+
+        let subsampling_config = ChannelSubsamplingConfig {
+            horizontal_rate: 1,
+            vertical_rate: 2,
+            method: ChannelSubsamplingMethod::Average,
+        };
+        let mut my_itr = my_img
+            .chroma_blue_channel()
+            .subsampling_iter(&subsampling_config);
 
         let val = my_itr
             .nth(1)
@@ -358,61 +368,46 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
     fn out_of_bounds_high() {
-        let my_img: Image<f32> = Image {
-            width: 4,
-            height: 4,
-            chroma_blue: vec![
-                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
-                16.0,
-            ],
-            luma: vec![
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ],
-            chroma_red: vec![
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ],
-        };
-
-        let mut my_itr: ChannelView<f32> = my_img.channel_view(
-            ChannelIndex::ChromaBlue,
-            2,
-            1,
-            ChannelSubsamplingMethod::Average,
+        let my_img: Image<f32> = Image::new(
+            4,
+            4,
+            Vec::from(DUMMY_CHANNEL),
+            Vec::from(TEST_CHANNEL_ONE),
+            Vec::from(DUMMY_CHANNEL),
         );
 
-        let val = my_itr
-            .nth(2)
-            .expect("image should have 4 rows")
-            .nth(2)
-            .expect("image should have 4 columns");
+        let subsampling_config = ChannelSubsamplingConfig {
+            horizontal_rate: 2,
+            vertical_rate: 1,
+            method: ChannelSubsamplingMethod::Average,
+        };
+        let mut my_itr = my_img
+            .chroma_blue_channel()
+            .subsampling_iter(&subsampling_config);
+
+        let option = my_itr.nth(2).expect("image should have 4 rows").nth(2);
+        assert!(option.is_none(), "Read out of bounds should return none");
     }
 
     #[test]
     fn repeat_border_test() {
-        let my_img: Image<f32> = Image {
-            width: 4,
-            height: 4,
-            chroma_blue: vec![
-                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
-                16.0,
-            ],
-            luma: vec![
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ],
-            chroma_red: vec![
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-            ],
-        };
-
-        let mut my_itr: ChannelView<f32> = ChannelView::from_image(
-            &my_img,
-            ChannelIndex::ChromaBlue,
-            3,
-            2,
-            ChannelSubsamplingMethod::Average,
+        let my_img: Image<f32> = Image::new(
+            4,
+            4,
+            Vec::from(DUMMY_CHANNEL),
+            Vec::from(TEST_CHANNEL_ONE),
+            Vec::from(DUMMY_CHANNEL),
         );
+
+        let subsampling_config = ChannelSubsamplingConfig {
+            horizontal_rate: 2,
+            vertical_rate: 3,
+            method: ChannelSubsamplingMethod::Average,
+        };
+        let mut my_itr = my_img
+            .chroma_blue_channel()
+            .subsampling_iter(&subsampling_config);
 
         let val = my_itr
             .nth(1)
