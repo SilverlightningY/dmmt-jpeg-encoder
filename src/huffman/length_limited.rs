@@ -133,8 +133,6 @@ impl LengthLimitedHuffmanCodeGenerator {
     }
 }
 
-impl LengthLimitedHuffmanCodeGenerator {}
-
 #[cfg(test)]
 mod test {
     use super::HuffmanCodeGenerator;
