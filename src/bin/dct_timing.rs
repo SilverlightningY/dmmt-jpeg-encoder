@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use dmmt_jpeg_encoder::cosine_transform::{
     simple::SimpleDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer,
@@ -9,19 +9,15 @@ const IMAGE_WIDTH: u16 = 3840;
 const IMAGE_HEIGHT: u16 = 2160;
 const IMAGE_SIZE: usize = IMAGE_WIDTH as usize * IMAGE_HEIGHT as usize;
 
-fn create_test_color_channel() -> [f32; IMAGE_SIZE] {
+fn create_test_color_channel() -> Vec<f32> {
     (0..IMAGE_SIZE)
         .map(|index| {
             let x = index as u16 % IMAGE_WIDTH;
             let y = index as u16 / IMAGE_WIDTH;
             let value = (x + y * 8) % 256;
-            let scaled_value = value as f32 / 255_f32;
-            (index, scaled_value)
+            value as f32 / 255_f32
         })
-        .fold([f32::default(); IMAGE_SIZE], |mut acc, (index, value)| {
-            acc[index] = value;
-            acc
-        })
+        .collect()
 }
 
 fn create_test_image() -> Image<f32> {
@@ -29,7 +25,7 @@ fn create_test_image() -> Image<f32> {
     Image::new(
         IMAGE_WIDTH,
         IMAGE_HEIGHT,
-        color_channel.to_vec(),
+        color_channel,
         Vec::new(),
         Vec::new(),
     )
@@ -52,14 +48,43 @@ fn cut_image_into_blocks(image: &Image<f32>) -> Vec<[f32; 64]> {
         })
 }
 
+const NUMBER_OF_ROUNDS: u32 = 10;
+
 fn main() {
-    let test_blocks = cut_image_into_blocks(&create_test_image());
-    let start = Instant::now();
-    for _ in 0..1 {
+    println!("Creating test image");
+    let test_image = create_test_image();
+    println!("Splitting test image into squares");
+    let test_blocks = cut_image_into_blocks(&test_image);
+    println!("Starting transformation");
+    let mut durations: Vec<Duration> = Vec::new();
+
+    for index in 0..NUMBER_OF_ROUNDS {
+        let round = index + 1;
+        println!("Starting round {}", index);
+        let start = Instant::now();
+
         for block in &test_blocks {
             SimpleDiscrete8x8CosineTransformer::transform(block);
         }
+
+        let duration = start.elapsed();
+        println!(
+            "Finished round {} after {} microseconds",
+            round,
+            duration.as_micros(),
+        );
+        durations.push(duration);
     }
-    let duration = start.elapsed();
-    println!("Time elapsed: {}", duration.as_micros());
+
+    println!("Transformation done");
+
+    let min_duration = durations.iter().min().unwrap();
+    let max_duration = durations.iter().max().unwrap();
+    let avg_duration = durations.iter().sum::<Duration>() / NUMBER_OF_ROUNDS;
+    println!(
+        "Min: {}, Max: {}, Average: {}",
+        min_duration.as_micros(),
+        max_duration.as_micros(),
+        avg_duration.as_micros()
+    );
 }
