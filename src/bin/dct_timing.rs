@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use dmmt_jpeg_encoder::cosine_transform::{
-    arai::AraiDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer,
+    separated::SeparatedDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer,
 };
 
 fn main() {
@@ -16,9 +16,18 @@ fn main() {
         0.3370769, 0.1292153, 0.7361369, 0.9847407, 0.7540513, 0.5663624, 0.7456282, 0.474166,
     ];
     let start = Instant::now();
-    for _ in 0..100_000 {
-        AraiDiscrete8x8CosineTransformer::transform(&TEST_BLOCK);
+    for _ in 0..40_000_000 {
+        SeparatedDiscrete8x8CosineTransformer::transform(&TEST_BLOCK);
     }
     let duration = start.elapsed();
-    println!("Time elapsed: {:?}", duration);
+    println!("Time elapsed (return 256 bytes each time): {:?}", duration);
+
+    let mut output: [f32; 64] = [0.0; 64];
+    let start = Instant::now();
+    for _ in 0..40_000_000 {
+        SeparatedDiscrete8x8CosineTransformer::transform_without_return_copy(&TEST_BLOCK, & mut output);
+    }
+    let duration = start.elapsed();
+    println!("Time elapsed (with return pointer): {:?}", duration);
 }
+
