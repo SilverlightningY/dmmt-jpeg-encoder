@@ -1,7 +1,8 @@
 use std::collections::BinaryHeap;
 use std::iter;
 
-use super::{HuffmanCode, HuffmanCodeGenerator};
+use super::code::HuffmanCode;
+use super::code::HuffmanCodeGenerator;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct Node {
@@ -37,7 +38,7 @@ impl HuffmanCodeGenerator for LengthLimitedHuffmanCodeGenerator {
     fn generate(&mut self, sorted_frequencies: &[usize]) -> HuffmanCode {
         assert!(
             sorted_frequencies.is_sorted(),
-            "Frequencies must be sorted in descending order"
+            "Frequencies must be sorted in ascending order"
         );
         let code_length = sorted_frequencies.len();
         assert!(
@@ -132,11 +133,9 @@ impl LengthLimitedHuffmanCodeGenerator {
     }
 }
 
-impl LengthLimitedHuffmanCodeGenerator {}
-
 #[cfg(test)]
 mod test {
-    use crate::huffman::HuffmanCodeGenerator;
+    use super::HuffmanCodeGenerator;
 
     use super::{LengthLimitedHuffmanCodeGenerator, Node, NodeKind};
 

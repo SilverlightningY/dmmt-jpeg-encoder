@@ -19,7 +19,7 @@ mod color;
 pub mod cosine_transform;
 mod error;
 pub mod huffman;
-mod image;
+pub mod image;
 mod logger;
 
 pub type Result<T> = std::result::Result<T, error::Error>;

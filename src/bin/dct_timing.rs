@@ -1,24 +1,90 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use dmmt_jpeg_encoder::cosine_transform::{
-    arai::AraiDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer,
+    simple::SimpleDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer,
 };
+use dmmt_jpeg_encoder::image::{ChannelSubsamplingConfig, ChannelSubsamplingMethod, Image};
+
+const IMAGE_WIDTH: u16 = 3840;
+const IMAGE_HEIGHT: u16 = 2160;
+const IMAGE_SIZE: usize = IMAGE_WIDTH as usize * IMAGE_HEIGHT as usize;
+
+fn create_test_color_channel() -> Vec<f32> {
+    (0..IMAGE_SIZE)
+        .map(|index| {
+            let x = index as u16 % IMAGE_WIDTH;
+            let y = index as u16 / IMAGE_WIDTH;
+            let value = (x + y * 8) % 256;
+            value as f32 / 255_f32
+        })
+        .collect()
+}
+
+fn create_test_image() -> Image<f32> {
+    let color_channel = create_test_color_channel();
+    Image::new(
+        IMAGE_WIDTH,
+        IMAGE_HEIGHT,
+        color_channel,
+        Vec::new(),
+        Vec::new(),
+    )
+}
+
+fn cut_image_into_blocks(image: &Image<f32>) -> Vec<[f32; 64]> {
+    let subsampling_config = ChannelSubsamplingConfig {
+        vertical_rate: 1,
+        horizontal_rate: 1,
+        method: ChannelSubsamplingMethod::Skip,
+    };
+    image
+        .luma_channel()
+        .subsampling_iter(&subsampling_config)
+        .into_square_iter(8)
+        .fold(Vec::new(), |mut acc, square| {
+            let block: [f32; 64] = square[0..64].try_into().unwrap();
+            acc.push(block);
+            acc
+        })
+}
+
+const NUMBER_OF_ROUNDS: u32 = 10;
 
 fn main() {
-    const TEST_BLOCK: [f32; 64] = [
-        0.736259, 0.2606891, 0.5610827, 0.8214362, 0.9691457, 0.8678548, 0.6238593, 0.5084994,
-        0.8050782, 0.7121189, 0.5455183, 0.9727164, 0.5572985, 0.2453382, 0.8806421, 0.1258583,
-        0.8396557, 0.3285012, 0.348796, 0.7314371, 0.3823053, 0.5750602, 0.5600756, 0.7767876,
-        0.3731192, 0.0588091, 0.6840113, 0.3082369, 0.1330607, 0.4003418, 0.9928281, 0.6752525,
-        0.2386547, 0.1788079, 0.2037415, 0.320719, 0.0138248, 0.8993194, 0.5502792, 0.8301034,
-        0.461806, 0.2384105, 0.3627735, 0.582995, 0.2926725, 0.9669484, 0.4517349, 0.7738883,
-        0.2172307, 0.6634418, 0.6780297, 0.3852351, 0.2001098, 0.6359752, 0.8304086, 0.3636585,
-        0.3370769, 0.1292153, 0.7361369, 0.9847407, 0.7540513, 0.5663624, 0.7456282, 0.474166,
-    ];
-    let start = Instant::now();
-    for _ in 0..100_000 {
-        AraiDiscrete8x8CosineTransformer::transform(&TEST_BLOCK);
+    println!("Creating test image");
+    let test_image = create_test_image();
+    println!("Splitting test image into squares");
+    let test_blocks = cut_image_into_blocks(&test_image);
+    println!("Starting transformation");
+    let mut durations: Vec<Duration> = Vec::new();
+
+    for index in 0..NUMBER_OF_ROUNDS {
+        let round = index + 1;
+        println!("Starting round {}", round);
+        let start = Instant::now();
+
+        for block in &test_blocks {
+            SimpleDiscrete8x8CosineTransformer::transform(block);
+        }
+
+        let duration = start.elapsed();
+        println!(
+            "Finished round {} after {} microseconds",
+            round,
+            duration.as_micros(),
+        );
+        durations.push(duration);
     }
-    let duration = start.elapsed();
-    println!("Time elapsed: {:?}", duration);
+
+    println!("Transformation done");
+
+    let min_duration = durations.iter().min().unwrap();
+    let max_duration = durations.iter().max().unwrap();
+    let avg_duration = durations.iter().sum::<Duration>() / NUMBER_OF_ROUNDS;
+    println!(
+        "Min: {}, Max: {}, Average: {}",
+        min_duration.as_micros(),
+        max_duration.as_micros(),
+        avg_duration.as_micros()
+    );
 }
