@@ -60,7 +60,7 @@ fn main() {
 
     for index in 0..NUMBER_OF_ROUNDS {
         let round = index + 1;
-        println!("Starting round {}", index);
+        println!("Starting round {}", round);
         let start = Instant::now();
 
         for block in &test_blocks {
