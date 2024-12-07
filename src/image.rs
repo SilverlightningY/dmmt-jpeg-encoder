@@ -76,8 +76,8 @@ where
     T: Clone + Copy,
 {
     fn dot(&self, column_index: u16, row_index: u16) -> T {
-        let index = column_index + row_index * self.width;
-        self.dots[index as usize]
+        let index: usize = column_index as usize + row_index as usize * self.width as usize;
+        self.dots[index]
     }
 
     fn rect(&self, column_index: u16, row_index: u16, width: u16, height: u16) -> Vec<T> {
@@ -299,18 +299,22 @@ where
     fn read_next_square_size_rows(&mut self) {
         for _ in 0..self.square_size {
             self.read_next_row();
-            self.pad_row();
         }
         self.pad_all_blocks_in_buffer();
     }
 
     fn read_next_row(&mut self) {
         if let Some(row) = self.row_view.next() {
-            for (index, value) in row.enumerate() {
-                let square_index = index / self.square_size;
-                self.fill_buffer_to_length(square_index + 1);
-                self.square_buffer[square_index].push(value);
-            }
+            self.insert_row_into_square_buffers(row);
+            self.pad_row();
+        }
+    }
+
+    fn insert_row_into_square_buffers(&mut self, row: impl Iterator<Item = T>) {
+        for (index, value) in row.enumerate() {
+            let square_index = index / self.square_size;
+            self.fill_buffer_to_length(square_index + 1);
+            self.square_buffer[square_index].push(value);
         }
     }
 
