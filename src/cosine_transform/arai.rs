@@ -16,7 +16,6 @@ impl Discrete8x8CosineTransformer for AraiDiscrete8x8CosineTransformer {
                 counter += 1;
             });
         }
-        println!("{:?}", row_pass);
         let mut column_pass: [f32; 64] = [0.0; 64];
         for col in 0..8 {
             let mut group = [0.0; 8];
@@ -26,9 +25,6 @@ impl Discrete8x8CosineTransformer for AraiDiscrete8x8CosineTransformer {
                 group[row] = row_pass[idx];
                 index[row] = idx;
             }
-            println!("{:?}", group);
-            println!("{:?}", index);
-
             Self::fast_arai(&mut group);
             for i in 0..8 {
                 column_pass[index[i]] = group[i];
