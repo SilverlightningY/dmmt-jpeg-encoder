@@ -44,16 +44,15 @@ impl SimpleDiscrete8x8CosineTransformer {
 
 impl Discrete8x8CosineTransformer for SimpleDiscrete8x8CosineTransformer {
     fn transform(values: &[f32; NUMBER_OF_VALUES]) -> [f32; NUMBER_OF_VALUES] {
-        let transformed_values: Vec<f32> = (0..NUMBER_OF_VALUES)
+        (0..NUMBER_OF_VALUES)
             .map(|index| {
                 let i = index % SQUARE_SIZE;
                 let j = index / SQUARE_SIZE;
                 Self::calculate_value(i, j, values)
             })
-            .collect();
-        let return_value: [f32; NUMBER_OF_VALUES] =
-            transformed_values[0..NUMBER_OF_VALUES].try_into().unwrap();
-        return_value
+            .collect::<Vec<f32>>()
+            .try_into()
+            .unwrap()
     }
 }
 

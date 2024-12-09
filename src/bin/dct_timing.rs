@@ -41,11 +41,19 @@ fn cut_image_into_blocks(image: &Image<f32>) -> Vec<[f32; 64]> {
         .luma_channel()
         .subsampling_iter(&subsampling_config)
         .into_square_iter(8)
-        .fold(Vec::new(), |mut acc, square| {
-            let block: [f32; 64] = square[0..64].try_into().unwrap();
-            acc.push(block);
-            acc
-        })
+        .map(|square| -> [f32; 64] { square.try_into().unwrap() })
+        .collect()
+}
+
+fn calculate_std_deviation_in_micros(mean: &Duration, measurements: &[Duration]) -> u64 {
+    let mean_micros = mean.as_micros() as i128;
+    let sum = measurements
+        .iter()
+        .map(|m| m.as_micros() as i128 - mean_micros)
+        .map(|v| v.pow(2).unsigned_abs())
+        .sum::<u128>();
+    let variance = sum / measurements.len() as u128;
+    (variance as f64).sqrt().round() as u64
 }
 
 const NUMBER_OF_ROUNDS: u32 = 10;
@@ -58,16 +66,15 @@ fn main() {
     println!("Starting transformation");
     let mut durations: Vec<Duration> = Vec::new();
 
-    for index in 0..NUMBER_OF_ROUNDS {
-        let round = index + 1;
+    for round in 1..=NUMBER_OF_ROUNDS {
         println!("Starting round {}", round);
-        let start = Instant::now();
 
+        let start = Instant::now();
         for block in &test_blocks {
             SimpleDiscrete8x8CosineTransformer::transform(block);
         }
-
         let duration = start.elapsed();
+
         println!(
             "Finished round {} after {} microseconds",
             round,
@@ -81,10 +88,13 @@ fn main() {
     let min_duration = durations.iter().min().unwrap();
     let max_duration = durations.iter().max().unwrap();
     let avg_duration = durations.iter().sum::<Duration>() / NUMBER_OF_ROUNDS;
+    let std_deviation = calculate_std_deviation_in_micros(&avg_duration, &durations);
+
     println!(
-        "Min: {}, Max: {}, Average: {}",
+        "Min: {}, Max: {}, Average: {}, Std Deviation: {}",
         min_duration.as_micros(),
         max_duration.as_micros(),
-        avg_duration.as_micros()
+        avg_duration.as_micros(),
+        std_deviation,
     );
 }
