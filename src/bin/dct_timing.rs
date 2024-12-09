@@ -84,7 +84,7 @@ fn measure_image_transformation_n_times(
     let mut stdout = stdout();
     println!("Starting measurement");
     for round in 1..=n {
-        print!("\rRound {}", round);
+        print!("\rRound {}/{}", round, n);
         stdout.flush().unwrap();
         let duration = transform_image(image, transformer);
         durations.push(duration);
@@ -105,7 +105,8 @@ fn print_statistics(measurement: &Measurement) {
     let std_deviation = calculate_std_deviation_in_micros(&avg_duration, durations);
 
     println!(
-        "Min: {}, Max: {}, Average: {}, Std Deviation: {}",
+        "Rounds: {}, Min: {}, Max: {}, Average: {}, Std Deviation: {}",
+        rounds,
         min_duration.as_micros(),
         max_duration.as_micros(),
         avg_duration.as_micros(),
