@@ -2,7 +2,8 @@ use std::io::{stdout, Write};
 use std::time::{Duration, Instant};
 
 use dmmt_jpeg_encoder::cosine_transform::{
-    simple::SimpleDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer,
+    arai::AraiDiscrete8x8CosineTransformer, simple::SimpleDiscrete8x8CosineTransformer,
+    Discrete8x8CosineTransformer,
 };
 use dmmt_jpeg_encoder::image::{ChannelSubsamplingConfig, ChannelSubsamplingMethod, Image};
 
@@ -121,13 +122,21 @@ fn main() {
     let test_image = create_test_image();
 
     println!("Simple Algorithm");
+    /*let measurement = measure_image_transformation_n_times(
+            &test_image,
+            NUMBER_OF_ROUNDS as usize,
+            &SimpleDiscrete8x8CosineTransformer,
+        );
+        print_statistics(&measurement);
+    */
+
+    println!("Arai Algorithm");
     let measurement = measure_image_transformation_n_times(
         &test_image,
         NUMBER_OF_ROUNDS as usize,
-        &SimpleDiscrete8x8CosineTransformer,
+        &AraiDiscrete8x8CosineTransformer,
     );
     print_statistics(&measurement);
-
     // println!("Separated Algorithm");
     // println!("Arai Algorithm");
 }

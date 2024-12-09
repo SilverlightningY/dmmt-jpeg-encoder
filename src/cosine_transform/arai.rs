@@ -2,7 +2,7 @@ use std::f32::consts::{FRAC_1_SQRT_2, PI};
 
 use super::Discrete8x8CosineTransformer;
 
-struct AraiDiscrete8x8CosineTransformer;
+pub struct AraiDiscrete8x8CosineTransformer;
 
 type Row = [f32; 8];
 
