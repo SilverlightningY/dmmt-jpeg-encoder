@@ -104,7 +104,7 @@ impl<'a, T: Write> Encoder<'a, T> {
 
     pub fn encode(&mut self, image: &OutputImage) -> Result<()> {
         self.write_start_of_file()?;
-        self.write_jfif_application_header(image)?;
+        self.write_jfif_application_header()?;
         // self.write_luminance_quantization_table()?;
         // self.write_chrominance_quantization_table()?;
         self.write_start_of_frame(image)?;
@@ -168,9 +168,9 @@ impl<'a, T: Write> Encoder<'a, T> {
         self.write_huffman_table(TableKind::ChromaDC, &image.chroma_dc_huffman)
     }
 
-    fn write_jfif_application_header(&mut self, image: &OutputImage) -> Result<()> {
-        let width_bytes = image.width.to_be_bytes();
-        let height_bytes = image.height.to_be_bytes();
+    fn write_jfif_application_header(&mut self) -> Result<()> {
+        // let width_bytes = image.width.to_be_bytes();
+        // let height_bytes = image.height.to_be_bytes();
         #[rustfmt::skip]
         let content = &[
             b'J', b'F', b'I', b'F', b'\0',// Identifier
@@ -227,9 +227,7 @@ impl<'a, T: Write> Encoder<'a, T> {
 mod tests {
     use crate::{
         huffman::SymbolCodeLength,
-        image::{
-            encoder::TableKind, ChannelSubsamplingMethod, ChromaSubsamplingPreset, OutputImage,
-        },
+        image::{encoder::TableKind, ChromaSubsamplingPreset, OutputImage},
     };
 
     use super::Encoder;
@@ -239,7 +237,6 @@ mod tests {
         height: 2,
         chroma_subsampling_preset: ChromaSubsamplingPreset::P444,
         bits_per_channel: 8,
-        subsampling_method: ChannelSubsamplingMethod::Skip,
         luma_ac_huffman: Vec::new(),
         luma_dc_huffman: Vec::new(),
         chroma_ac_huffman: Vec::new(),
@@ -250,9 +247,7 @@ mod tests {
     fn test_write_jfif() {
         let mut output = Vec::new();
         let mut encoder = Encoder::new(&mut output);
-        encoder
-            .write_jfif_application_header(&OUTPUT_IMAGE)
-            .unwrap();
+        encoder.write_jfif_application_header().unwrap();
         assert_eq!(
             output,
             [

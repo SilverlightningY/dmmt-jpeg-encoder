@@ -37,7 +37,6 @@ impl<'a> JpegTransformer<'a> {
             height: image.height,
             chroma_subsampling_preset: self.options.chroma_subsampling_preset,
             bits_per_channel: self.options.bits_per_channel,
-            subsampling_method: self.options.chroma_subsampling_method,
             luma_ac_huffman: Self::generate_code_lengths(&ac_dummy),
             luma_dc_huffman: Self::generate_code_lengths(&ac_dummy),
             chroma_ac_huffman: Self::generate_code_lengths(&ac_dummy),
