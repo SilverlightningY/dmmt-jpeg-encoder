@@ -10,6 +10,11 @@ const IMAGE_WIDTH: u16 = 3840;
 const IMAGE_HEIGHT: u16 = 2160;
 const IMAGE_SIZE: usize = IMAGE_WIDTH as usize * IMAGE_HEIGHT as usize;
 
+struct Measurement {
+    durations: Vec<Duration>,
+    number_of_rounds: usize,
+}
+
 fn create_test_color_channel() -> Vec<f32> {
     (0..IMAGE_SIZE)
         .map(|index| {
@@ -73,7 +78,7 @@ fn measure_image_transformation_n_times(
     image: &Image<f32>,
     n: usize,
     transformer: &impl Discrete8x8CosineTransformer,
-) -> Vec<Duration> {
+) -> Measurement {
     let mut durations: Vec<Duration> = Vec::new();
 
     let mut stdout = stdout();
@@ -85,10 +90,15 @@ fn measure_image_transformation_n_times(
         durations.push(duration);
     }
     println!("\rMeasurement done");
-    durations
+    Measurement {
+        durations,
+        number_of_rounds: n,
+    }
 }
 
-fn print_statistics(durations: &[Duration], rounds: u32) {
+fn print_statistics(measurement: &Measurement) {
+    let durations = &measurement.durations;
+    let rounds = measurement.number_of_rounds as u32;
     let min_duration = durations.iter().min().unwrap();
     let max_duration = durations.iter().max().unwrap();
     let avg_duration = durations.iter().sum::<Duration>() / rounds;
@@ -110,12 +120,12 @@ fn main() {
     let test_image = create_test_image();
 
     println!("Simple Algorithm");
-    let durations = measure_image_transformation_n_times(
+    let measurement = measure_image_transformation_n_times(
         &test_image,
         NUMBER_OF_ROUNDS as usize,
         &SimpleDiscrete8x8CosineTransformer,
     );
-    print_statistics(&durations, NUMBER_OF_ROUNDS);
+    print_statistics(&measurement);
 
     // println!("Separated Algorithm");
     // println!("Arai Algorithm");
