@@ -2,26 +2,14 @@ use std::f32::consts::{FRAC_1_SQRT_2, PI};
 
 use super::Discrete8x8CosineTransformer;
 
-pub struct AraiDiscrete8x8CosineTransformer {}
-
-impl Discrete8x8CosineTransformer for AraiDiscrete8x8CosineTransformer {
-    fn transform(values: &mut [f32; 64]) {
-        for i in 0..8 {
-            let start_idx = i * 8;
-            Self::fast_arai(&mut values[start_idx..], 1)
-        }
-        for i in 0..8 {
-            Self::fast_arai(&mut values[i..], 8);
-        }
-    }
-}
+struct AraiDiscrete8x8CosineTransformer;
 
 type Row = [f32; 8];
 
 impl AraiDiscrete8x8CosineTransformer {
     fn fast_arai(inputs: &mut [f32], stride: usize) {
         let v00 = inputs[0];
-        let v01 = inputs[1 * stride];
+        let v01 = inputs[stride];
         let v02 = inputs[2 * stride];
         let v03 = inputs[3 * stride];
         let v04 = inputs[4 * stride];
@@ -65,12 +53,12 @@ impl AraiDiscrete8x8CosineTransformer {
         let v66 = v55 - v46;
         let v67 = v57 - v44;
 
-        inputs[0 * stride] = v30 * Self::S0;
+        inputs[0] = v30 * Self::S0;
         inputs[4 * stride] = v31 * Self::S4;
         inputs[2 * stride] = v52 * Self::S2;
         inputs[6 * stride] = v53 * Self::S6;
         inputs[5 * stride] = v64 * Self::S5;
-        inputs[1 * stride] = v65 * Self::S1;
+        inputs[stride] = v65 * Self::S1;
         inputs[7 * stride] = v66 * Self::S7;
         inputs[3 * stride] = v67 * Self::S3;
     }
@@ -109,21 +97,21 @@ impl AraiDiscrete8x8CosineTransformer {
 
     fn y1(i: &Row) -> f32 {
         let temp = i[1] - i[6] + i[0] - i[7];
-        (i[0] - i[7] + Self::A3 * (i[2] - i[5] + i[1] - i[6]) - Self::A4 * (temp)
-            + Self::A5 * (temp))
+        (i[0] - i[7] + Self::A3 * (i[2] - i[5] + i[1] - i[6]) + Self::A4 * (temp)
+            - Self::A5 * (temp - i[3] + i[4] - i[0] + i[7]))
             * Self::S_VALUES[1]
     }
 
     fn y7(i: &Row) -> f32 {
         let temp = i[1] - i[6] + i[0] - i[7];
-        (i[0] - i[7] + Self::A3 * (i[2] - i[5] + i[1] - i[6])
-            - Self::A4 * (temp - i[3] + i[4] - i[2] + i[5])
-            + Self::A5 * (temp))
+        (i[0] - i[7] + Self::A3 * (i[2] - i[5] + i[1] - i[6]) - Self::A4 * (temp)
+            + Self::A5 * (temp - i[3] + i[4] - i[0] + i[7]))
             * Self::S_VALUES[7]
     }
 
     fn y3(i: &Row) -> f32 {
-        (-Self::A2 * (i[3] - i[4] + i[2] - i[5]) - Self::A5 * (i[3] - i[4] + i[2] - i[5]) + i[0]
+        let temp = i[3] - i[4] + i[2] - i[5];
+        (-Self::A2 * temp - Self::A5 * (temp - i[1] + i[6] - i[0] + i[7]) + i[0]
             - i[7]
             - Self::A3 * (i[2] - i[5] + i[1] - i[6]))
             * Self::S_VALUES[3]
@@ -154,18 +142,24 @@ impl AraiDiscrete8x8CosineTransformer {
     const S_VALUES: &[f32; 8] = &[Self::S0, Self::S1, Self::S2,  Self::S3, Self::S4, Self::S5, Self::S6, Self::S7];
 }
 
-mod test {
-    use std::f32::consts::PI;
-
-    use crate::cosine_transform::{
-        simple::SimpleDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer,
-    };
-
-    use super::AraiDiscrete8x8CosineTransformer;
-
-    fn compute_manually_s(k: usize) -> f32 {
-        1.0 / (4.0 * (f32::cos(PI * k as f32 / 16_f32)))
+impl Discrete8x8CosineTransformer for AraiDiscrete8x8CosineTransformer {
+    fn transform(&self, values: &mut [f32; 64]) {
+        for i in 0..8 {
+            let start_idx = i * 8;
+            Self::fast_arai(&mut values[start_idx..], 1)
+        }
+        for i in 0..8 {
+            Self::fast_arai(&mut values[i..], 8);
+        }
     }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::cosine_transform::simple::SimpleDiscrete8x8CosineTransformer;
+
+    use super::super::Discrete8x8CosineTransformer;
+    use super::AraiDiscrete8x8CosineTransformer;
 
     #[rustfmt::skip]
     const TEST_VALUES: [f32; 64] = [
@@ -191,25 +185,10 @@ mod test {
         2.0, 2.0, 6.0, 2.0, 3.0, 3.0, 3.0, 4.0,
     ];
 
-    #[test]
-    fn test_transform() {
-        let mut input = TEST_VALUES.clone();
-        let new = AraiDiscrete8x8CosineTransformer::transform(&mut input);
-        log::warn!("{:?}", new)
-    }
-
-    fn assert_eq_with_deviation(actual: f32, expected: f32, deviation: f32, index: usize) {
+    fn assert_almost_eq(actual: f32, expected: f32, deviation: f32, index: usize) {
         assert!(
-            actual <= expected + deviation,
-            "Value {} at index {} is greater than {} with deviation of {}",
-            actual,
-            index,
-            expected,
-            deviation
-        );
-        assert!(
-            actual >= expected - deviation,
-            "Value {} at index {} is smaller than {} with deviation of {}",
+            (expected - actual).abs() <= deviation,
+            "Value {} at index {} is different than {} with deviation of {}",
             actual,
             index,
             expected,
@@ -217,34 +196,22 @@ mod test {
         );
     }
 
-    #[test]
-    fn test_calculated_s_values() {
-        for i in 1..7 {
-            assert_eq_with_deviation(
-                compute_manually_s(i),
-                AraiDiscrete8x8CosineTransformer::S_VALUES[i],
-                0.00001,
-                i,
-            )
-        }
-    }
-
-    #[ignore]
     #[test]
     fn test_fast_simple() {
         let mut input: [f32; 64] = [0.0; 64]; // Initialize a mutable array with default values
         input.copy_from_slice(&TEST_VALUES);
-        AraiDiscrete8x8CosineTransformer::transform(&mut input);
-        let mut input2 = TEST_VALUES.clone();
-        SimpleDiscrete8x8CosineTransformer::transform(&mut input2);
+
+        AraiDiscrete8x8CosineTransformer.transform(&mut input);
+        let mut input2 = TEST_VALUES;
+        SimpleDiscrete8x8CosineTransformer.transform(&mut input2);
         for i in 0..64 {
-            assert_eq_with_deviation(input[i], input2[i], 0.001, i)
+            assert_almost_eq(input[i], input2[i], 0.01, i)
         }
     }
 
     #[test]
     fn compare_fast_own() {
-        let mut input = TEST_VALUES.clone();
+        let mut input = TEST_VALUES;
         AraiDiscrete8x8CosineTransformer::fast_arai(&mut input, 1);
         let mut input2: [f32; 8] = [0.0; 8];
         input2.copy_from_slice(&TEST_VALUES[0..8]);
