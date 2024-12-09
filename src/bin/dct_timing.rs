@@ -1,3 +1,4 @@
+use std::io::{stdout, Write};
 use std::time::{Duration, Instant};
 
 use dmmt_jpeg_encoder::cosine_transform::{
@@ -56,39 +57,42 @@ fn calculate_std_deviation_in_micros(mean: &Duration, measurements: &[Duration])
     (variance as f64).sqrt().round() as u64
 }
 
-const NUMBER_OF_ROUNDS: u32 = 10;
+fn transform_image(
+    image: &Image<f32>,
+    transformer: &impl Discrete8x8CosineTransformer,
+) -> Duration {
+    let mut blocks = cut_image_into_blocks(image);
+    let start = Instant::now();
+    for block in &mut blocks {
+        transformer.transform(block);
+    }
+    start.elapsed()
+}
 
-fn main() {
-    println!("Creating test image");
-    let test_image = create_test_image();
-    println!("Splitting test image into squares");
-    let test_blocks = cut_image_into_blocks(&test_image);
-    println!("Starting transformation");
+fn measure_image_transformation_n_times(
+    image: &Image<f32>,
+    n: usize,
+    transformer: &impl Discrete8x8CosineTransformer,
+) -> Vec<Duration> {
     let mut durations: Vec<Duration> = Vec::new();
 
-    for round in 1..=NUMBER_OF_ROUNDS {
-        println!("Starting round {}", round);
-
-        let start = Instant::now();
-        for block in &test_blocks {
-            SimpleDiscrete8x8CosineTransformer::transform(block);
-        }
-        let duration = start.elapsed();
-
-        println!(
-            "Finished round {} after {} microseconds",
-            round,
-            duration.as_micros(),
-        );
+    let mut stdout = stdout();
+    println!("Starting measurement");
+    for round in 1..=n {
+        print!("\rRound {}", round);
+        stdout.flush().unwrap();
+        let duration = transform_image(image, transformer);
         durations.push(duration);
     }
+    println!("\rMeasurement done");
+    durations
+}
 
-    println!("Transformation done");
-
+fn print_statistics(durations: &[Duration], rounds: u32) {
     let min_duration = durations.iter().min().unwrap();
     let max_duration = durations.iter().max().unwrap();
-    let avg_duration = durations.iter().sum::<Duration>() / NUMBER_OF_ROUNDS;
-    let std_deviation = calculate_std_deviation_in_micros(&avg_duration, &durations);
+    let avg_duration = durations.iter().sum::<Duration>() / rounds;
+    let std_deviation = calculate_std_deviation_in_micros(&avg_duration, durations);
 
     println!(
         "Min: {}, Max: {}, Average: {}, Std Deviation: {}",
@@ -97,4 +101,22 @@ fn main() {
         avg_duration.as_micros(),
         std_deviation,
     );
+}
+
+const NUMBER_OF_ROUNDS: u32 = 10;
+
+fn main() {
+    println!("Creating test image");
+    let test_image = create_test_image();
+
+    println!("Simple Algorithm");
+    let durations = measure_image_transformation_n_times(
+        &test_image,
+        NUMBER_OF_ROUNDS as usize,
+        &SimpleDiscrete8x8CosineTransformer,
+    );
+    print_statistics(&durations, NUMBER_OF_ROUNDS);
+
+    // println!("Separated Algorithm");
+    // println!("Arai Algorithm");
 }

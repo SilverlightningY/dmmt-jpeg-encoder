@@ -43,16 +43,17 @@ impl SimpleDiscrete8x8CosineTransformer {
 }
 
 impl Discrete8x8CosineTransformer for SimpleDiscrete8x8CosineTransformer {
-    fn transform(values: &[f32; NUMBER_OF_VALUES]) -> [f32; NUMBER_OF_VALUES] {
-        (0..NUMBER_OF_VALUES)
+    fn transform(&self, values: &mut [f32; NUMBER_OF_VALUES]) {
+        let transformed_values = (0..NUMBER_OF_VALUES)
             .map(|index| {
                 let i = index % SQUARE_SIZE;
                 let j = index / SQUARE_SIZE;
                 Self::calculate_value(i, j, values)
             })
-            .collect::<Vec<f32>>()
-            .try_into()
-            .unwrap()
+            .collect::<Vec<f32>>();
+        for (value, t_value) in values.iter_mut().zip(transformed_values.into_iter()) {
+            *value = t_value;
+        }
     }
 }
 
@@ -81,20 +82,17 @@ impl InverseSimpleDiscrete8x8CosineTransformer {
 }
 
 impl Discrete8x8CosineTransformer for InverseSimpleDiscrete8x8CosineTransformer {
-    fn transform(values: &[f32; 64]) -> [f32; 64] {
-        (0..NUMBER_OF_VALUES)
+    fn transform(&self, values: &mut [f32; 64]) {
+        let transformed_values = (0..NUMBER_OF_VALUES)
             .map(|index| {
                 let x = index % SQUARE_SIZE;
                 let y = index / SQUARE_SIZE;
-                (index, Self::calculate_value(x, y, values))
+                Self::calculate_value(x, y, values)
             })
-            .fold(
-                [f32::default(); NUMBER_OF_VALUES],
-                |mut acc, (index, value)| {
-                    acc[index] = value;
-                    acc
-                },
-            )
+            .collect::<Vec<f32>>();
+        for (value, t_value) in values.iter_mut().zip(transformed_values.into_iter()) {
+            *value = t_value;
+        }
     }
 }
 
@@ -115,19 +113,20 @@ mod test {
     ];
 
     fn assert_eq_with_deviation(actual: f32, expected: f32, deviation: f32, index: usize) {
+        let difference = actual - expected;
+        let abs_difference = difference.abs();
+        let comp_word = if difference.is_sign_positive() {
+            "greater"
+        } else {
+            "smaller"
+        };
+
         assert!(
-            actual <= expected + deviation,
-            "Value {} at index {} is greater than {} with deviation of {}",
+            abs_difference < deviation,
+            "Value {} at index {} is {} than {} with deviation of {}",
             actual,
             index,
-            expected,
-            deviation
-        );
-        assert!(
-            actual >= expected - deviation,
-            "Value {} at index {} is smaller than {} with deviation of {}",
-            actual,
-            index,
+            comp_word,
             expected,
             deviation
         );
@@ -142,10 +141,11 @@ mod test {
     #[test]
     fn test_transform_to_frequency_domain_and_back() {
         let deviation = 1e-6_f32;
-        let frequencies = SimpleDiscrete8x8CosineTransformer::transform(&TEST_BLOCK);
-        assert_values_not_zero(&frequencies);
-        let colors = InverseSimpleDiscrete8x8CosineTransformer::transform(&frequencies);
-        for (index, (actual, expected)) in colors.into_iter().zip(TEST_BLOCK).enumerate() {
+        let mut test_block = TEST_BLOCK;
+        SimpleDiscrete8x8CosineTransformer.transform(&mut test_block);
+        assert_values_not_zero(&test_block);
+        InverseSimpleDiscrete8x8CosineTransformer.transform(&mut test_block);
+        for (index, (actual, expected)) in test_block.into_iter().zip(TEST_BLOCK).enumerate() {
             assert_eq_with_deviation(actual, expected, deviation, index);
         }
     }
