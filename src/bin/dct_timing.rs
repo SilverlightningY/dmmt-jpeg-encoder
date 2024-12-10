@@ -115,6 +115,13 @@ fn print_statistics(measurement: &Measurement) {
     );
 }
 
+fn run_arai_algorithm_measurement(image: &Image<f32>) {
+    println!("Arai Algorithm");
+    let measurement =
+        measure_image_transformation_n_times(image, 1200, &AraiDiscrete8x8CosineTransformer);
+    print_statistics(&measurement);
+}
+
 const NUMBER_OF_ROUNDS: u32 = 10;
 
 fn main() {
@@ -122,21 +129,15 @@ fn main() {
     let test_image = create_test_image();
 
     println!("Simple Algorithm");
-    /*let measurement = measure_image_transformation_n_times(
-            &test_image,
-            NUMBER_OF_ROUNDS as usize,
-            &SimpleDiscrete8x8CosineTransformer,
-        );
-        print_statistics(&measurement);
-    */
-
-    println!("Arai Algorithm");
     let measurement = measure_image_transformation_n_times(
         &test_image,
         NUMBER_OF_ROUNDS as usize,
-        &AraiDiscrete8x8CosineTransformer,
+        &SimpleDiscrete8x8CosineTransformer,
     );
     print_statistics(&measurement);
+
+    run_arai_algorithm_measurement(&test_image);
+
     // println!("Separated Algorithm");
     // println!("Arai Algorithm");
 }
