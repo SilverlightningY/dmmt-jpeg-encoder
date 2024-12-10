@@ -70,55 +70,54 @@ const A: [f32; 64] = [
 ];
 
 impl Discrete8x8CosineTransformer for SeparatedDiscrete8x8CosineTransformer {
-    fn transform(values: &[f32; 64]) -> [f32; 64] {
-	let mut transformed: [f32; 64] = [0.0; 64];
-	let mut intermediate: [f32; 64] = [0.0; 64];
-	for i in 0..8 {
+    fn transform(&self, values: &mut [f32; 64]) {
+        let mut transformed: [f32; 64] = [0.0; 64];
+        let mut intermediate: [f32; 64] = [0.0; 64];
+        for i in 0..8 {
             for j in 0..8 {
-		let mut acc: f32 = 0.0;
-		for k in 0..8{
-                    acc += A[i*8 + k] * values[k*8 + j];
-		}
-		intermediate[i*8 + j] = acc;
+                let mut acc: f32 = 0.0;
+                for k in 0..8 {
+                    acc += A[i * 8 + k] * values[k * 8 + j];
+                }
+                intermediate[i * 8 + j] = acc;
             }
-	}
-	for i in 0..8 {
+        }
+        for i in 0..8 {
             for j in 0..8 {
-		let mut acc: f32 = 0.0;
-		for k in 0..8 {
-                    acc += intermediate[i*8+k] * A[j*8+k];
-		}
-		transformed[i*8+j] = acc;
+                let mut acc: f32 = 0.0;
+                for k in 0..8 {
+                    acc += intermediate[i * 8 + k] * A[j * 8 + k];
+                }
+                transformed[i * 8 + j] = acc;
             }
-	}
-	transformed
+        }
+        *values = transformed
     }
 }
 
 impl SeparatedDiscrete8x8CosineTransformer {
-    pub fn transform_without_return_copy(values: &[f32; 64], output: & mut [f32; 64]) {
-	let mut intermediate: [f32; 64] = [0.0; 64];
-	for i in 0..8 {
+    pub fn transform_without_return_copy(values: &[f32; 64], output: &mut [f32; 64]) {
+        let mut intermediate: [f32; 64] = [0.0; 64];
+        for i in 0..8 {
             for j in 0..8 {
-		let mut acc: f32 = 0.0;
-		for k in 0..8{
-                    acc += A[i*8 + k] * values[k*8 + j];
-		}
-		intermediate[i*8 + j] = acc;
+                let mut acc: f32 = 0.0;
+                for k in 0..8 {
+                    acc += A[i * 8 + k] * values[k * 8 + j];
+                }
+                intermediate[i * 8 + j] = acc;
             }
-	}
-	for i in 0..8 {
+        }
+        for i in 0..8 {
             for j in 0..8 {
-		let mut acc: f32 = 0.0;
-		for k in 0..8 {
-                    acc += intermediate[i*8+k] * A[j*8+k];
-		}
-		output[i*8+j] = acc;
+                let mut acc: f32 = 0.0;
+                for k in 0..8 {
+                    acc += intermediate[i * 8 + k] * A[j * 8 + k];
+                }
+                output[i * 8 + j] = acc;
             }
-	}
+        }
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -129,7 +128,7 @@ mod test {
 
     const TEST_BLOCK: [f32; 64] = [
         0.736259, 0.2606891, 0.5610827, 0.8214362, 0.9691457, 0.8678548, 0.6238593, 0.5084994,
-        0.8050782, 0.7121189, 0.5455183, 0.9727164, 0.5572985, 0.2453382, 0.8806421, 0.1258583, 
+        0.8050782, 0.7121189, 0.5455183, 0.9727164, 0.5572985, 0.2453382, 0.8806421, 0.1258583,
         0.8396557, 0.3285012, 0.348796, 0.7314371, 0.3823053, 0.5750602, 0.5600756, 0.7767876,
         0.3731192, 0.0588091, 0.6840113, 0.3082369, 0.1330607, 0.4003418, 0.9928281, 0.6752525,
         0.2386547, 0.1788079, 0.2037415, 0.320719, 0.0138248, 0.8993194, 0.5502792, 0.8301034,
@@ -166,24 +165,28 @@ mod test {
     #[test]
     fn test_transform_to_frequency_domain_and_back() {
         let deviation = 1e-6_f32;
-        let frequencies = SeparatedDiscrete8x8CosineTransformer::transform(&TEST_BLOCK);
-        assert_values_not_zero(&frequencies);
-        let colors = InverseSimpleDiscrete8x8CosineTransformer::transform(&frequencies);
-        for (index, (actual, expected)) in colors.into_iter().zip(TEST_BLOCK).enumerate() {
+        let mut test_block = TEST_BLOCK;
+        SeparatedDiscrete8x8CosineTransformer.transform(&mut test_block);
+        assert_values_not_zero(&test_block);
+        InverseSimpleDiscrete8x8CosineTransformer.transform(&mut test_block);
+        for (index, (actual, expected)) in test_block.into_iter().zip(TEST_BLOCK).enumerate() {
             assert_eq_with_deviation(actual, expected, deviation, index);
         }
     }
-    
+
     #[test]
     fn test_transform_to_frequency_domain_and_back_without_return() {
         let deviation = 1e-6_f32;
-	
-	let mut frequencies: [f32; 64] = [0.0; 64];
-        SeparatedDiscrete8x8CosineTransformer::transform_without_return_copy(&TEST_BLOCK, & mut frequencies);
-	
+
+        let mut frequencies: [f32; 64] = [0.0; 64];
+        SeparatedDiscrete8x8CosineTransformer::transform_without_return_copy(
+            &TEST_BLOCK,
+            &mut frequencies,
+        );
+
         assert_values_not_zero(&frequencies);
-        let colors = InverseSimpleDiscrete8x8CosineTransformer::transform(&frequencies);
-        for (index, (actual, expected)) in colors.into_iter().zip(TEST_BLOCK).enumerate() {
+        InverseSimpleDiscrete8x8CosineTransformer.transform(&mut frequencies);
+        for (index, (actual, expected)) in frequencies.into_iter().zip(TEST_BLOCK).enumerate() {
             assert_eq_with_deviation(actual, expected, deviation, index);
         }
     }
