@@ -114,20 +114,16 @@ fn print_statistics(measurement: &Measurement) {
     );
 }
 
-const NUMBER_OF_ROUNDS: u32 = 10;
+fn run_simple_algorithm_measurement(image: &Image<f32>) {
+    println!("Simple Algorithm");
+    let measurement =
+        measure_image_transformation_n_times(image, 10, &SimpleDiscrete8x8CosineTransformer);
+    print_statistics(&measurement);
+}
 
 fn main() {
     println!("Creating test image");
     let test_image = create_test_image();
 
-    println!("Simple Algorithm");
-    let measurement = measure_image_transformation_n_times(
-        &test_image,
-        NUMBER_OF_ROUNDS as usize,
-        &SimpleDiscrete8x8CosineTransformer,
-    );
-    print_statistics(&measurement);
-
-    // println!("Separated Algorithm");
-    // println!("Arai Algorithm");
+    run_simple_algorithm_measurement(&test_image);
 }
