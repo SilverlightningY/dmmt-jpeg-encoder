@@ -1,3 +1,4 @@
+pub mod arai;
 pub mod separated;
 pub mod simple;
 
