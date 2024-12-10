@@ -115,24 +115,24 @@ fn print_statistics(measurement: &Measurement) {
     );
 }
 
-fn run_simple_algorithm_measurement(image: &Image<f32>) {
+fn run_simple_algorithm_measurement(image: &Image<f32>, rounds: usize) {
     println!("Simple Algorithm");
     let measurement =
-        measure_image_transformation_n_times(image, 10, &SimpleDiscrete8x8CosineTransformer);
+        measure_image_transformation_n_times(image, rounds, &SimpleDiscrete8x8CosineTransformer);
     print_statistics(&measurement);
 }
 
-fn run_separated_algorithm_measurement(image: &Image<f32>) {
+fn run_separated_algorithm_measurement(image: &Image<f32>, rounds: usize) {
     println!("Separated Algorithm");
     let measurement =
-        measure_image_transformation_n_times(image, 10, &SeparatedDiscrete8x8CosineTransformer);
+        measure_image_transformation_n_times(image, rounds, &SeparatedDiscrete8x8CosineTransformer);
     print_statistics(&measurement);
 }
 
-fn run_arai_algorithm_measurement(image: &Image<f32>) {
+fn run_arai_algorithm_measurement(image: &Image<f32>, rounds: usize) {
     println!("Arai Algorithm");
     let measurement =
-        measure_image_transformation_n_times(image, 1200, &AraiDiscrete8x8CosineTransformer);
+        measure_image_transformation_n_times(image, rounds, &AraiDiscrete8x8CosineTransformer);
     print_statistics(&measurement);
 }
 
@@ -140,7 +140,7 @@ fn main() {
     println!("Creating test image");
     let test_image = create_test_image();
 
-    run_simple_algorithm_measurement(&test_image);
-    run_separated_algorithm_measurement(&test_image);
-    run_arai_algorithm_measurement(&test_image);
+    run_simple_algorithm_measurement(&test_image, 5);
+    run_separated_algorithm_measurement(&test_image, 140);
+    run_arai_algorithm_measurement(&test_image, 160);
 }
