@@ -3,70 +3,70 @@ use super::Discrete8x8CosineTransformer;
 pub struct SeparatedDiscrete8x8CosineTransformer;
 
 const A: [f32; 64] = [
-    0.3535533905932737,
-    0.3535533905932737,
-    0.3535533905932737,
-    0.3535533905932737,
-    0.3535533905932737,
-    0.3535533905932737,
-    0.3535533905932737,
-    0.3535533905932737,
-    0.4903926402016152,
-    0.4157348061512726,
-    0.2777851165098011,
-    0.0975451610080642,
-    -0.0975451610080641,
-    -0.2777851165098010,
-    -0.4157348061512727,
-    -0.4903926402016152,
-    0.4619397662556434,
-    0.1913417161825449,
-    -0.1913417161825449,
-    -0.4619397662556434,
-    -0.4619397662556434,
-    -0.1913417161825452,
-    0.1913417161825450,
-    0.4619397662556433,
-    0.4157348061512726,
-    -0.0975451610080641,
-    -0.4903926402016152,
-    -0.2777851165098011,
-    0.2777851165098009,
-    0.4903926402016152,
-    0.0975451610080644,
-    -0.4157348061512726,
-    0.3535533905932738,
-    -0.3535533905932737,
-    -0.3535533905932738,
-    0.3535533905932737,
-    0.3535533905932738,
-    -0.3535533905932733,
-    -0.3535533905932736,
-    0.3535533905932733,
-    0.2777851165098011,
-    -0.4903926402016152,
-    0.0975451610080642,
-    0.4157348061512727,
-    -0.4157348061512726,
-    -0.0975451610080640,
-    0.4903926402016153,
-    -0.2777851165098008,
-    0.1913417161825449,
-    -0.4619397662556434,
-    0.4619397662556433,
-    -0.1913417161825449,
-    -0.1913417161825453,
-    0.4619397662556434,
-    -0.4619397662556432,
-    0.1913417161825448,
-    0.0975451610080642,
-    -0.2777851165098011,
-    0.4157348061512727,
-    -0.4903926402016153,
-    0.4903926402016152,
-    -0.4157348061512725,
-    0.2777851165098008,
-    -0.0975451610080643,
+    0.353_553_38,
+    0.353_553_38,
+    0.353_553_38,
+    0.353_553_38,
+    0.353_553_38,
+    0.353_553_38,
+    0.353_553_38,
+    0.353_553_38,
+    0.490_392_63,
+    0.415_734_8,
+    0.277_785_12,
+    0.097_545_16,
+    -0.097_545_16,
+    -0.277_785_12,
+    -0.415_734_8,
+    -0.490_392_63,
+    0.461_939_75,
+    0.191_341_71,
+    -0.191_341_71,
+    -0.461_939_75,
+    -0.461_939_75,
+    -0.191_341_71,
+    0.191_341_71,
+    0.461_939_75,
+    0.415_734_8,
+    -0.097_545_16,
+    -0.490_392_63,
+    -0.277_785_12,
+    0.277_785_12,
+    0.490_392_63,
+    0.097_545_16,
+    -0.415_734_8,
+    0.353_553_38,
+    -0.353_553_38,
+    -0.353_553_38,
+    0.353_553_38,
+    0.353_553_38,
+    -0.353_553_38,
+    -0.353_553_38,
+    0.353_553_38,
+    0.277_785_12,
+    -0.490_392_63,
+    0.097_545_16,
+    0.415_734_8,
+    -0.415_734_8,
+    -0.097_545_16,
+    0.490_392_63,
+    -0.277_785_12,
+    0.191_341_71,
+    -0.461_939_75,
+    0.461_939_75,
+    -0.191_341_71,
+    -0.191_341_71,
+    0.461_939_75,
+    -0.461_939_75,
+    0.191_341_71,
+    0.097_545_16,
+    -0.277_785_12,
+    0.415_734_8,
+    -0.490_392_63,
+    0.490_392_63,
+    -0.415_734_8,
+    0.277_785_12,
+    -0.097_545_16,
 ];
 
 impl Discrete8x8CosineTransformer for SeparatedDiscrete8x8CosineTransformer {
@@ -76,7 +76,7 @@ impl Discrete8x8CosineTransformer for SeparatedDiscrete8x8CosineTransformer {
             for j in 0..8 {
                 let mut acc: f32 = 0.0;
                 for k in 0..8 {
-                    acc += A[i * 8 + k] * *block_start.offset((k * 8 + j) as isize);
+                    acc += A[i * 8 + k] * *block_start.add(k * 8 + j);
                 }
                 intermediate[i * 8 + j] = acc;
             }
@@ -87,7 +87,7 @@ impl Discrete8x8CosineTransformer for SeparatedDiscrete8x8CosineTransformer {
                 for k in 0..8 {
                     acc += intermediate[i * 8 + k] * A[j * 8 + k];
                 }
-                *block_start.offset((i * 8 + j) as isize) = acc;
+                *block_start.add(i * 8 + j) = acc;
             }
         }
     }
@@ -112,19 +112,20 @@ mod test {
     ];
 
     fn assert_eq_with_deviation(actual: f32, expected: f32, deviation: f32, index: usize) {
+        let difference = actual - expected;
+        let abs_difference = difference.abs();
+        let comp_word = if difference.is_sign_positive() {
+            "greater"
+        } else {
+            "smaller"
+        };
+
         assert!(
-            actual <= expected + deviation,
-            "Value {} at index {} is greater than {} with deviation of {}",
+            abs_difference < deviation,
+            "Value {} at index {} is {} than {} with deviation of {}",
             actual,
             index,
-            expected,
-            deviation
-        );
-        assert!(
-            actual >= expected - deviation,
-            "Value {} at index {} is smaller than {} with deviation of {}",
-            actual,
-            index,
+            comp_word,
             expected,
             deviation
         );
@@ -140,11 +141,11 @@ mod test {
     fn test_transform_to_frequency_domain_and_back() {
         let deviation = 1e-6_f32;
         let mut test_block = TEST_BLOCK;
-	unsafe {
-            SeparatedDiscrete8x8CosineTransformer.transform(& mut test_block[0] as *mut f32);
+        unsafe {
+            SeparatedDiscrete8x8CosineTransformer.transform(&raw mut test_block[0]);
             assert_values_not_zero(&test_block);
-            InverseSimpleDiscrete8x8CosineTransformer.transform(& mut test_block[0] as *mut f32);
-	}
+            InverseSimpleDiscrete8x8CosineTransformer.transform(&raw mut test_block[0]);
+        }
         for (index, (actual, expected)) in test_block.into_iter().zip(TEST_BLOCK).enumerate() {
             assert_eq_with_deviation(actual, expected, deviation, index);
         }

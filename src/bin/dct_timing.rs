@@ -2,7 +2,8 @@ use std::io::{stdout, Write};
 use std::time::{Duration, Instant};
 
 use dmmt_jpeg_encoder::cosine_transform::{
-    // arai::AraiDiscrete8x8CosineTransformer, separated::SeparatedDiscrete8x8CosineTransformer,
+    // arai::AraiDiscrete8x8CosineTransformer,
+    separated::SeparatedDiscrete8x8CosineTransformer,
     simple::SimpleDiscrete8x8CosineTransformer,
     Discrete8x8CosineTransformer,
 };
@@ -78,7 +79,7 @@ fn transform_channel(
 }
 
 fn measure_image_transformation_n_times(
-    channel: &mut [f32],
+    channel: &[f32],
     n: usize,
     transformer: &impl Discrete8x8CosineTransformer,
 ) -> Measurement {
@@ -118,20 +119,23 @@ fn print_statistics(measurement: &Measurement) {
     );
 }
 
-fn run_simple_algorithm_measurement(channel: &mut [f32], rounds: usize) {
+fn run_simple_algorithm_measurement(channel: &[f32], rounds: usize) {
     println!("Simple Algorithm");
     let measurement =
         measure_image_transformation_n_times(channel, rounds, &SimpleDiscrete8x8CosineTransformer);
     print_statistics(&measurement);
 }
 
-// fn run_separated_algorithm_measurement(image: &Image<f32>, rounds: usize) {
-//     println!("Separated Algorithm");
-//     let measurement =
-//         measure_image_transformation_n_times(image, rounds, &SeparatedDiscrete8x8CosineTransformer);
-//     print_statistics(&measurement);
-// }
-//
+fn run_separated_algorithm_measurement(channel: &[f32], rounds: usize) {
+    println!("Separated Algorithm");
+    let measurement = measure_image_transformation_n_times(
+        channel,
+        rounds,
+        &SeparatedDiscrete8x8CosineTransformer,
+    );
+    print_statistics(&measurement);
+}
+
 // fn run_arai_algorithm_measurement(image: &Image<f32>, rounds: usize) {
 //     println!("Arai Algorithm");
 //     let measurement =
@@ -143,9 +147,9 @@ fn main() {
     println!("Creating test image");
     let test_image = create_test_image();
     let blocks = cut_image_into_blocks(&test_image);
-    let mut channel = blocks.into_flattened();
+    let channel = blocks.into_flattened();
 
-    run_simple_algorithm_measurement(&mut channel, 5);
-    // run_separated_algorithm_measurement(&test_image, 140);
+    run_simple_algorithm_measurement(&channel, 5);
+    run_separated_algorithm_measurement(&channel, 140);
     // run_arai_algorithm_measurement(&test_image, 160);
 }
