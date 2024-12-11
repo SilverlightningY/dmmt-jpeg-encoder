@@ -26,15 +26,15 @@ const S6: f32 = 0.653_281_5;
 const S7: f32 = 1.281_457_7;
 
 impl AraiDiscrete8x8CosineTransformer {
-    unsafe fn fast_arai(block_start: *mut f32, stride: isize) {
-        let p0 = block_start.offset(0);
-        let p1 = block_start.offset(1 * stride);
-        let p2 = block_start.offset(2 * stride);
-        let p3 = block_start.offset(3 * stride);
-        let p4 = block_start.offset(4 * stride);
-        let p5 = block_start.offset(5 * stride);
-        let p6 = block_start.offset(6 * stride);
-        let p7 = block_start.offset(7 * stride);
+    unsafe fn fast_arai(block_start: *mut f32, stride: usize) {
+        let p0 = block_start;
+        let p1 = block_start.add(stride);
+        let p2 = block_start.add(2 * stride);
+        let p3 = block_start.add(3 * stride);
+        let p4 = block_start.add(4 * stride);
+        let p5 = block_start.add(5 * stride);
+        let p6 = block_start.add(6 * stride);
+        let p7 = block_start.add(7 * stride);
 
         let v00 = *p0;
         let v01 = *p1;
@@ -106,6 +106,7 @@ impl Discrete8x8CosineTransformer for AraiDiscrete8x8CosineTransformer {
 #[cfg(test)]
 mod test {
 
+    use super::super::simple::SimpleDiscrete8x8CosineTransformer;
     use super::super::Discrete8x8CosineTransformer;
     use super::{
         AraiDiscrete8x8CosineTransformer, A1, A2, A3, A4, A5, S0, S1, S2, S3, S4, S5, S6, S7,
@@ -186,33 +187,34 @@ mod test {
         );
     }
 
-    #[ignore]
     #[test]
     fn test_fast_simple() {
-        let mut input: [f32; 64] = [0.0; 64]; // Initialize a mutable array with default values
-        input.copy_from_slice(&TEST_VALUES);
+        let mut test_values = TEST_VALUES;
+        let mut simple_test_values = TEST_VALUES;
 
-        AraiDiscrete8x8CosineTransformer.transform(&mut input, 8);
-        let mut input2 = TEST_VALUES;
-        //SimpleDiscrete8x8CosineTransformer.transform(&mut input2);
+        unsafe {
+            AraiDiscrete8x8CosineTransformer.transform(&raw mut test_values[0]);
+            SimpleDiscrete8x8CosineTransformer.transform(&raw mut simple_test_values[0]);
+        }
         for i in 0..64 {
-            assert_almost_eq(input[i], input2[i], 1e-4, i)
+            assert_almost_eq(test_values[i], simple_test_values[i], 1e-4, i)
         }
     }
 
     #[test]
     fn compare_fast_own() {
         let mut input = TEST_VALUES;
-        AraiDiscrete8x8CosineTransformer::fast_arai(&mut input, 1);
-        let mut input2: [f32; 8] = [0.0; 8];
-        input2.copy_from_slice(&TEST_VALUES[0..8]);
-        assert_eq!(input[0], y0(&input2), "Wrong Y0 calculated");
-        assert_eq!(input[4], y4(&input2), "Wrong Y4 calculated");
-        assert_eq!(input[2], y2(&input2), "Wrong Y2 calculated");
-        assert_eq!(input[6], y6(&input2), "Wrong Y6 calculated");
-        assert_eq!(input[5], y5(&input2), "Wrong Y5 calculated");
-        assert_eq!(input[1], y1(&input2), "Wrong Y1 calculated");
-        assert_eq!(input[7], y7(&input2), "Wrong Y7 calculated");
-        assert_eq!(input[3], y3(&input2), "Wrong Y3 calculated");
+        unsafe {
+            AraiDiscrete8x8CosineTransformer::fast_arai(&raw mut input[0], 1);
+        }
+        let input2 = TEST_VALUES[0..8].try_into().unwrap();
+        assert_eq!(input[0], y0(input2), "Wrong Y0 calculated");
+        assert_eq!(input[4], y4(input2), "Wrong Y4 calculated");
+        assert_eq!(input[2], y2(input2), "Wrong Y2 calculated");
+        assert_eq!(input[6], y6(input2), "Wrong Y6 calculated");
+        assert_eq!(input[5], y5(input2), "Wrong Y5 calculated");
+        assert_eq!(input[1], y1(input2), "Wrong Y1 calculated");
+        assert_eq!(input[7], y7(input2), "Wrong Y7 calculated");
+        assert_eq!(input[3], y3(input2), "Wrong Y3 calculated");
     }
 }
