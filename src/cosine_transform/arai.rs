@@ -26,15 +26,24 @@ const S6: f32 = 0.653_281_5;
 const S7: f32 = 1.281_457_7;
 
 impl AraiDiscrete8x8CosineTransformer {
-    fn fast_arai(inputs: &mut [f32], stride: usize) {
-        let v00 = inputs[0];
-        let v01 = inputs[stride];
-        let v02 = inputs[2 * stride];
-        let v03 = inputs[3 * stride];
-        let v04 = inputs[4 * stride];
-        let v05 = inputs[5 * stride];
-        let v06 = inputs[6 * stride];
-        let v07 = inputs[7 * stride];
+    unsafe fn fast_arai(block_start: *mut f32, stride: isize) {
+        let p0 = block_start.offset(0);
+        let p1 = block_start.offset(1 * stride);
+        let p2 = block_start.offset(2 * stride);
+        let p3 = block_start.offset(3 * stride);
+        let p4 = block_start.offset(4 * stride);
+        let p5 = block_start.offset(5 * stride);
+        let p6 = block_start.offset(6 * stride);
+        let p7 = block_start.offset(7 * stride);
+
+        let v00 = *p0;
+        let v01 = *p1;
+        let v02 = *p2;
+        let v03 = *p3;
+        let v04 = *p4;
+        let v05 = *p5;
+        let v06 = *p6;
+        let v07 = *p7;
 
         let v10 = v00 + v07;
         let v11 = v01 + v06;
@@ -72,24 +81,24 @@ impl AraiDiscrete8x8CosineTransformer {
         let v66 = v55 - v46;
         let v67 = v57 - v44;
 
-        inputs[0] = v30 * S0;
-        inputs[4 * stride] = v31 * S4;
-        inputs[2 * stride] = v52 * S2;
-        inputs[6 * stride] = v53 * S6;
-        inputs[5 * stride] = v64 * S5;
-        inputs[stride] = v65 * S1;
-        inputs[7 * stride] = v66 * S7;
-        inputs[3 * stride] = v67 * S3;
+        *p0 = v30 * S0;
+        *p4 = v31 * S4;
+        *p2 = v52 * S2;
+        *p6 = v53 * S6;
+        *p5 = v64 * S5;
+        *p1 = v65 * S1;
+        *p7 = v66 * S7;
+        *p3 = v67 * S3;
     }
 }
 
 impl Discrete8x8CosineTransformer for AraiDiscrete8x8CosineTransformer {
-    fn transform(&self, image_slice: &mut [f32], row_lenght: usize) {
+    unsafe fn transform(&self, block_start: *mut f32) {
         for i in 0..8 {
-            Self::fast_arai(&mut image_slice[i * row_lenght..], 1)
+            Self::fast_arai(block_start.offset(i * 8), 1)
         }
         for i in 0..8 {
-            Self::fast_arai(&mut image_slice[i..], row_lenght);
+            Self::fast_arai(block_start.offset(i), 8);
         }
     }
 }
