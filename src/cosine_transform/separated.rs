@@ -70,13 +70,13 @@ const A: [f32; 64] = [
 ];
 
 impl Discrete8x8CosineTransformer for SeparatedDiscrete8x8CosineTransformer {
-    fn transform(&self, image_section: &mut [f32], row_length: usize) {
+    unsafe fn transform(&self, block_start: *mut f32) {
         let mut intermediate: [f32; 64] = [0.0; 64];
         for i in 0..8 {
             for j in 0..8 {
                 let mut acc: f32 = 0.0;
                 for k in 0..8 {
-                    acc += A[i * 8 + k] * image_section[k * row_length + j];
+                    acc += A[i * 8 + k] * *block_start.offset((k * 8 + j) as isize);
                 }
                 intermediate[i * 8 + j] = acc;
             }
@@ -87,7 +87,7 @@ impl Discrete8x8CosineTransformer for SeparatedDiscrete8x8CosineTransformer {
                 for k in 0..8 {
                     acc += intermediate[i * 8 + k] * A[j * 8 + k];
                 }
-                image_section[i * row_length + j] = acc;
+                *block_start.offset((i * 8 + j) as isize) = acc;
             }
         }
     }
