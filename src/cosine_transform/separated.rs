@@ -140,9 +140,11 @@ mod test {
     fn test_transform_to_frequency_domain_and_back() {
         let deviation = 1e-6_f32;
         let mut test_block = TEST_BLOCK;
-        SeparatedDiscrete8x8CosineTransformer.transform(&mut test_block, 8);
-        assert_values_not_zero(&test_block);
-        InverseSimpleDiscrete8x8CosineTransformer.transform(&mut test_block, 8);
+	unsafe {
+            SeparatedDiscrete8x8CosineTransformer.transform(& mut test_block[0] as *mut f32);
+            assert_values_not_zero(&test_block);
+            InverseSimpleDiscrete8x8CosineTransformer.transform(& mut test_block[0] as *mut f32);
+	}
         for (index, (actual, expected)) in test_block.into_iter().zip(TEST_BLOCK).enumerate() {
             assert_eq_with_deviation(actual, expected, deviation, index);
         }
