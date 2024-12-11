@@ -89,7 +89,7 @@ impl Discrete8x8CosineTransformer for AraiDiscrete8x8CosineTransformer {
             Self::fast_arai(&mut image_slice[i * row_lenght..], 1)
         }
         for i in 0..8 {
-            Self::fast_arai(&mut image_slice[i..], 8);
+            Self::fast_arai(&mut image_slice[i..], row_lenght);
         }
     }
 }
