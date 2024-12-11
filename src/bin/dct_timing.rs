@@ -2,8 +2,9 @@ use std::io::{stdout, Write};
 use std::time::{Duration, Instant};
 
 use dmmt_jpeg_encoder::cosine_transform::{
-    arai::AraiDiscrete8x8CosineTransformer, separated::SeparatedDiscrete8x8CosineTransformer,
-    simple::SimpleDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer,
+    // arai::AraiDiscrete8x8CosineTransformer, separated::SeparatedDiscrete8x8CosineTransformer,
+    simple::SimpleDiscrete8x8CosineTransformer,
+    Discrete8x8CosineTransformer,
 };
 use dmmt_jpeg_encoder::image::{ChannelSubsamplingConfig, ChannelSubsamplingMethod, Image};
 
@@ -63,20 +64,21 @@ fn calculate_std_deviation_in_micros(mean: &Duration, measurements: &[Duration])
     (variance as f64).sqrt().round() as u64
 }
 
-fn transform_image(
-    image: &Image<f32>,
+fn transform_channel(
+    channel: &mut [f32],
     transformer: &impl Discrete8x8CosineTransformer,
 ) -> Duration {
-    let mut blocks = cut_image_into_blocks(image);
     let start = Instant::now();
-    for block in &mut blocks {
-        transformer.transform(block);
+    for block_start_index in (0..channel.len()).step_by(64) {
+        unsafe {
+            transformer.transform(&raw mut channel[block_start_index]);
+        }
     }
     start.elapsed()
 }
 
 fn measure_image_transformation_n_times(
-    image: &Image<f32>,
+    channel: &mut [f32],
     n: usize,
     transformer: &impl Discrete8x8CosineTransformer,
 ) -> Measurement {
@@ -87,7 +89,8 @@ fn measure_image_transformation_n_times(
     for round in 1..=n {
         print!("\rRound {}/{}", round, n);
         stdout.flush().unwrap();
-        let duration = transform_image(image, transformer);
+        let mut channel = Vec::from_iter(channel.iter().copied());
+        let duration = transform_channel(&mut channel, transformer);
         durations.push(duration);
     }
     println!("\rMeasurement done");
@@ -115,32 +118,34 @@ fn print_statistics(measurement: &Measurement) {
     );
 }
 
-fn run_simple_algorithm_measurement(image: &Image<f32>, rounds: usize) {
+fn run_simple_algorithm_measurement(channel: &mut [f32], rounds: usize) {
     println!("Simple Algorithm");
     let measurement =
-        measure_image_transformation_n_times(image, rounds, &SimpleDiscrete8x8CosineTransformer);
+        measure_image_transformation_n_times(channel, rounds, &SimpleDiscrete8x8CosineTransformer);
     print_statistics(&measurement);
 }
 
-fn run_separated_algorithm_measurement(image: &Image<f32>, rounds: usize) {
-    println!("Separated Algorithm");
-    let measurement =
-        measure_image_transformation_n_times(image, rounds, &SeparatedDiscrete8x8CosineTransformer);
-    print_statistics(&measurement);
-}
-
-fn run_arai_algorithm_measurement(image: &Image<f32>, rounds: usize) {
-    println!("Arai Algorithm");
-    let measurement =
-        measure_image_transformation_n_times(image, rounds, &AraiDiscrete8x8CosineTransformer);
-    print_statistics(&measurement);
-}
-
+// fn run_separated_algorithm_measurement(image: &Image<f32>, rounds: usize) {
+//     println!("Separated Algorithm");
+//     let measurement =
+//         measure_image_transformation_n_times(image, rounds, &SeparatedDiscrete8x8CosineTransformer);
+//     print_statistics(&measurement);
+// }
+//
+// fn run_arai_algorithm_measurement(image: &Image<f32>, rounds: usize) {
+//     println!("Arai Algorithm");
+//     let measurement =
+//         measure_image_transformation_n_times(image, rounds, &AraiDiscrete8x8CosineTransformer);
+//     print_statistics(&measurement);
+// }
+//
 fn main() {
     println!("Creating test image");
     let test_image = create_test_image();
+    let blocks = cut_image_into_blocks(&test_image);
+    let mut channel = blocks.into_flattened();
 
-    run_simple_algorithm_measurement(&test_image, 5);
-    run_separated_algorithm_measurement(&test_image, 140);
-    run_arai_algorithm_measurement(&test_image, 160);
+    run_simple_algorithm_measurement(&mut channel, 5);
+    // run_separated_algorithm_measurement(&test_image, 140);
+    // run_arai_algorithm_measurement(&test_image, 160);
 }

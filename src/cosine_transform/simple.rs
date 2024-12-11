@@ -1,4 +1,4 @@
-use core::f32;
+use core::{f32, slice};
 
 use super::Discrete8x8CosineTransformer;
 
@@ -23,15 +23,15 @@ impl SimpleDiscrete8x8CosineTransformer {
         2_f32 / SQUARE_SIZE as f32 * calculate_factor_c(i) * calculate_factor_c(j)
     }
 
-    fn calculate_value(i: usize, j: usize, input_values: &[f32; NUMBER_OF_VALUES]) -> f32 {
+    fn calculate_value(i: usize, j: usize, input_values: &[f32]) -> f32 {
         Self::calculate_normalization_factor(i, j) * Self::sum_up_cosines(i, j, input_values)
     }
 
-    fn sum_up_cosines(i: usize, j: usize, input_values: &[f32; NUMBER_OF_VALUES]) -> f32 {
+    fn sum_up_cosines(i: usize, j: usize, input_values: &[f32]) -> f32 {
         input_values
             .iter()
             .enumerate()
-            .map(|(index, &input_value)| {
+            .map(|(index, input_value)| {
                 let x = index % SQUARE_SIZE;
                 let y = index / SQUARE_SIZE;
                 input_value
@@ -43,7 +43,8 @@ impl SimpleDiscrete8x8CosineTransformer {
 }
 
 impl Discrete8x8CosineTransformer for SimpleDiscrete8x8CosineTransformer {
-    fn transform(&self, values: &mut [f32; NUMBER_OF_VALUES]) {
+    unsafe fn transform(&self, block_start: *mut f32) {
+        let values = slice::from_raw_parts_mut(block_start, NUMBER_OF_VALUES);
         let transformed_values = (0..NUMBER_OF_VALUES)
             .map(|index| {
                 let i = index % SQUARE_SIZE;
@@ -60,11 +61,11 @@ impl Discrete8x8CosineTransformer for SimpleDiscrete8x8CosineTransformer {
 pub struct InverseSimpleDiscrete8x8CosineTransformer;
 
 impl InverseSimpleDiscrete8x8CosineTransformer {
-    fn sum_up_inner_product(x: usize, y: usize, values: &[f32; NUMBER_OF_VALUES]) -> f32 {
+    fn sum_up_inner_product(x: usize, y: usize, values: &[f32]) -> f32 {
         values
             .iter()
             .enumerate()
-            .map(|(index, &value)| {
+            .map(|(index, value)| {
                 let i = index % SQUARE_SIZE;
                 let j = index / SQUARE_SIZE;
                 value
@@ -76,13 +77,14 @@ impl InverseSimpleDiscrete8x8CosineTransformer {
             .sum()
     }
 
-    fn calculate_value(x: usize, y: usize, values: &[f32; NUMBER_OF_VALUES]) -> f32 {
+    fn calculate_value(x: usize, y: usize, values: &[f32]) -> f32 {
         (2_f32 / SQUARE_SIZE as f32) * Self::sum_up_inner_product(x, y, values)
     }
 }
 
 impl Discrete8x8CosineTransformer for InverseSimpleDiscrete8x8CosineTransformer {
-    fn transform(&self, values: &mut [f32; 64]) {
+    unsafe fn transform(&self, block_start: *mut f32) {
+        let values = slice::from_raw_parts_mut(block_start, NUMBER_OF_VALUES);
         let transformed_values = (0..NUMBER_OF_VALUES)
             .map(|index| {
                 let x = index % SQUARE_SIZE;
@@ -142,9 +144,11 @@ mod test {
     fn test_transform_to_frequency_domain_and_back() {
         let deviation = 1e-6_f32;
         let mut test_block = TEST_BLOCK;
-        SimpleDiscrete8x8CosineTransformer.transform(&mut test_block);
-        assert_values_not_zero(&test_block);
-        InverseSimpleDiscrete8x8CosineTransformer.transform(&mut test_block);
+        unsafe {
+            SimpleDiscrete8x8CosineTransformer.transform(&raw mut test_block[0]);
+            assert_values_not_zero(&test_block);
+            InverseSimpleDiscrete8x8CosineTransformer.transform(&raw mut test_block[0]);
+        }
         for (index, (actual, expected)) in test_block.into_iter().zip(TEST_BLOCK).enumerate() {
             assert_eq_with_deviation(actual, expected, deviation, index);
         }
