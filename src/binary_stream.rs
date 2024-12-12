@@ -65,7 +65,7 @@ impl<'a, T: Write> BitWriter<'a, T> {
     }
 }
 
-impl<'a, T: Write> Write for BitWriter<'a, T> {
+impl<T: Write> Write for BitWriter<'_, T> {
     /// Writing of byte arrays into the bit writer (for performance)
     ///
     /// Warning: Even when the returned number in the result equals

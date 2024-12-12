@@ -232,7 +232,7 @@ pub struct ChannelColumnView<'a, T> {
     channel: &'a ColorChannel<T>,
 }
 
-impl<'a, T> Iterator for ChannelColumnView<'a, T>
+impl<T> Iterator for ChannelColumnView<'_, T>
 where
     T: Sized + Copy + AddAssign + DivAssign + Sum + From<u16> + Div + Div<Output = T>,
 {
@@ -292,7 +292,7 @@ pub struct ChannelSquareIterator<'a, T> {
     square_size: usize,
 }
 
-impl<'a, T> ChannelSquareIterator<'a, T>
+impl<T> ChannelSquareIterator<'_, T>
 where
     T: Sized + Copy + AddAssign + DivAssign + Sum + From<u16> + Div + Div<Output = T>,
 {
@@ -373,7 +373,7 @@ where
     }
 }
 
-impl<'a, T> Iterator for ChannelSquareIterator<'a, T>
+impl<T> Iterator for ChannelSquareIterator<'_, T>
 where
     T: Sized + Copy + AddAssign + DivAssign + Sum + From<u16> + Div + Div<Output = T>,
 {

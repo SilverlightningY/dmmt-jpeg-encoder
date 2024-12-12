@@ -1,5 +1,4 @@
 use std::io::{stdout, Result, Write};
-use std::num::NonZero;
 use std::thread;
 use std::time::{Duration, Instant};
 
