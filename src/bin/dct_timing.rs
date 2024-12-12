@@ -1,4 +1,6 @@
-use std::io::{stdout, Write};
+use std::io::{stdout, Result, Write};
+use std::num::NonZero;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use dmmt_jpeg_encoder::cosine_transform::{
@@ -6,6 +8,7 @@ use dmmt_jpeg_encoder::cosine_transform::{
     simple::SimpleDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer,
 };
 use dmmt_jpeg_encoder::image::{ChannelSubsamplingConfig, ChannelSubsamplingMethod, Image};
+use threadpool::ThreadPool;
 
 const IMAGE_WIDTH: u16 = 3840;
 const IMAGE_HEIGHT: u16 = 2160;
@@ -65,21 +68,23 @@ fn calculate_std_deviation_in_micros(mean: &Duration, measurements: &[Duration])
 
 fn transform_channel(
     channel: &mut [f32],
-    transformer: &impl Discrete8x8CosineTransformer,
+    transformer: &'static impl Discrete8x8CosineTransformer,
+    threadpool: &ThreadPool,
 ) -> Duration {
     let start = Instant::now();
-    for block_start_index in (0..channel.len()).step_by(64) {
-        unsafe {
-            transformer.transform(&raw mut channel[block_start_index]);
-        }
+    unsafe {
+        let channel_ptr = &raw mut channel[0];
+        transformer.transform_on_threadpool(threadpool, channel_ptr, channel.len(), 200);
     }
+    threadpool.join();
     start.elapsed()
 }
 
 fn measure_image_transformation_n_times(
     channel: &[f32],
     n: usize,
-    transformer: &impl Discrete8x8CosineTransformer,
+    transformer: &'static impl Discrete8x8CosineTransformer,
+    threadpool: &ThreadPool,
 ) -> Measurement {
     let mut durations: Vec<Duration> = Vec::new();
 
@@ -89,7 +94,7 @@ fn measure_image_transformation_n_times(
         print!("\rRound {}/{}", round, n);
         stdout.flush().unwrap();
         let mut channel = Vec::from_iter(channel.iter().copied());
-        let duration = transform_channel(&mut channel, transformer);
+        let duration = transform_channel(&mut channel, transformer, threadpool);
         durations.push(duration);
     }
     println!("\rMeasurement done");
@@ -117,28 +122,41 @@ fn print_statistics(measurement: &Measurement) {
     );
 }
 
-fn run_simple_algorithm_measurement(channel: &[f32], rounds: usize) {
+fn run_simple_algorithm_measurement(channel: &[f32], rounds: usize, threadpool: &ThreadPool) {
     println!("Simple Algorithm");
-    let measurement =
-        measure_image_transformation_n_times(channel, rounds, &SimpleDiscrete8x8CosineTransformer);
+    let measurement = measure_image_transformation_n_times(
+        channel,
+        rounds,
+        &SimpleDiscrete8x8CosineTransformer,
+        threadpool,
+    );
     print_statistics(&measurement);
 }
 
-fn run_separated_algorithm_measurement(channel: &[f32], rounds: usize) {
+fn run_separated_algorithm_measurement(channel: &[f32], rounds: usize, threadpool: &ThreadPool) {
     println!("Separated Algorithm");
     let measurement = measure_image_transformation_n_times(
         channel,
         rounds,
         &SeparatedDiscrete8x8CosineTransformer,
+        threadpool,
     );
     print_statistics(&measurement);
 }
 
-fn run_arai_algorithm_measurement(channel: &[f32], rounds: usize) {
+fn run_arai_algorithm_measurement(channel: &[f32], rounds: usize, threadpool: &ThreadPool) {
     println!("Arai Algorithm");
-    let measurement =
-        measure_image_transformation_n_times(channel, rounds, &AraiDiscrete8x8CosineTransformer);
+    let measurement = measure_image_transformation_n_times(
+        channel,
+        rounds,
+        &AraiDiscrete8x8CosineTransformer,
+        threadpool,
+    );
     print_statistics(&measurement);
+}
+
+fn get_number_of_threads() -> Result<usize> {
+    Ok(thread::available_parallelism()?.get())
 }
 
 fn main() {
@@ -146,8 +164,10 @@ fn main() {
     let test_image = create_test_image();
     let blocks = cut_image_into_blocks(&test_image);
     let channel = blocks.into_flattened();
+    let number_of_threads = get_number_of_threads().unwrap_or(4);
+    let threadpool = ThreadPool::new(number_of_threads);
 
-    run_simple_algorithm_measurement(&channel, 5);
-    run_separated_algorithm_measurement(&channel, 140);
-    run_arai_algorithm_measurement(&channel, 160);
+    run_simple_algorithm_measurement(&channel, 5, &threadpool);
+    run_separated_algorithm_measurement(&channel, 140, &threadpool);
+    run_arai_algorithm_measurement(&channel, 160, &threadpool);
 }
