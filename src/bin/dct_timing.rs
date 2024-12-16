@@ -167,7 +167,7 @@ fn create_test_image() -> Image<f32> {
     )
 }
 
-fn cut_image_into_blocks(image: &Image<f32>) -> Vec<[f32; 64]> {
+fn subsample_luma_channel(image: &Image<f32>) -> Vec<f32> {
     let subsampling_config = ChannelSubsamplingConfig {
         vertical_rate: 1,
         horizontal_rate: 1,
@@ -177,7 +177,7 @@ fn cut_image_into_blocks(image: &Image<f32>) -> Vec<[f32; 64]> {
         .luma_channel()
         .subsampling_iter(&subsampling_config)
         .into_square_iter(8)
-        .map(|square| -> [f32; 64] { square.try_into().unwrap() })
+        .flatten()
         .collect()
 }
 
@@ -293,8 +293,7 @@ fn main() {
 
     println!("Creating test image");
     let test_image = create_test_image();
-    let blocks = cut_image_into_blocks(&test_image);
-    let channel = blocks.into_flattened();
+    let channel = subsample_luma_channel(&test_image);
     println!("Creating Threadpool with {} threads", number_of_threads);
     let threadpool = ThreadPool::new(number_of_threads);
 

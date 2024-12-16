@@ -7,7 +7,9 @@ use std::ops::DivAssign;
 
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
+use threadpool::ThreadPool;
 
+use crate::cosine_transform::Discrete8x8CosineTransformer;
 use crate::huffman::SymbolCodeLength;
 use crate::Arguments;
 
@@ -73,7 +75,7 @@ pub struct ColorChannel<T> {
 
 impl<T> ColorChannel<T>
 where
-    T: Clone + Copy,
+    T: Sized + Copy + AddAssign + DivAssign + Sum + From<u16> + Div + Div<Output = T>,
 {
     fn dot(&self, column_index: u16, row_index: u16) -> T {
         let index: usize = column_index as usize + row_index as usize * self.width as usize;
@@ -103,6 +105,33 @@ where
             channel: self,
             subsampling_config,
             row_index: 0,
+        }
+    }
+
+    pub fn subsample(&mut self, subsampling_config: &ChannelSubsamplingConfig) {
+        let dots: Vec<T> = self
+            .subsampling_iter(subsampling_config)
+            .into_square_iter(8)
+            .flatten()
+            .collect();
+        self.dots = dots;
+    }
+}
+
+impl ColorChannel<f32> {
+    pub fn apply_cosine_transformation_on_threadpool(
+        &mut self,
+        transformer: &'static impl Discrete8x8CosineTransformer,
+        threadpool: &ThreadPool,
+    ) {
+        let channel_length = self.dots.len();
+        debug_assert!(
+            channel_length > 0 && channel_length % 64 == 0,
+            "The cosine transfomation only works on a sequence whose length is a multiple of 64"
+        );
+        unsafe {
+            let channel_start = &raw mut self.dots[0];
+            transformer.transform_on_threadpool(threadpool, channel_start, channel_length, 700);
         }
     }
 }
