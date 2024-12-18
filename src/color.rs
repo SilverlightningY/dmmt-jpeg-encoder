@@ -53,15 +53,15 @@ impl From<&RGBColorFormat<f32>> for YCbCrColorFormat<f32> {
         let weighted_red = red * 0.299_f32;
         let weighted_green = green * 0.587_f32;
         let weighted_blue = blue * 0.114_f32;
-        let luma = weighted_red + weighted_green + weighted_blue;
+        let luma = (weighted_red + weighted_green + weighted_blue - 128_f32 / 255_f32) * 255_f32;
         let weighted_red = red * -0.1687_f32;
         let weighted_green = green * -0.3312_f32;
         let weighted_blue = blue * 0.5_f32;
-        let chroma_blue = weighted_red + weighted_green + weighted_blue + 0.5_f32;
+        let chroma_blue = (weighted_red + weighted_green + weighted_blue) * 255_f32;
         let weighted_red = red * 0.5_f32;
         let weighted_green = green * -0.4186_f32;
         let weighted_blue = blue * -0.0813_f32;
-        let chroma_red = weighted_red + weighted_green + weighted_blue + 0.5_f32;
+        let chroma_red = (weighted_red + weighted_green + weighted_blue) * 255_f32;
 
         YCbCrColorFormat {
             luma,
@@ -84,16 +84,19 @@ mod test {
         };
         let result = YCbCrColorFormat::from(&rgb);
         assert!(
-            result.luma >= 0.552962_f32 && result.luma < 0.552963_f32,
-            "luma is wrong"
+            result.luma >= 12.95_f32 && result.luma < 13.05_f32,
+            "luma is wrong, was {}",
+            result.luma
         );
         assert!(
-            result.chroma_blue >= 0.375925 && result.chroma_blue < 0.375926,
-            "chroma blue is wrong"
+            result.chroma_blue >= -31.68 && result.chroma_blue < -31.58,
+            "chroma blue is wrong, was {}",
+            result.chroma_blue
         );
         assert!(
-            result.chroma_red >= 0.283977 && result.chroma_red < 0.283978,
-            "chroma red is wrong"
+            result.chroma_red >= -55.13 && result.chroma_red < -55.03,
+            "chroma red is wrong, was {}",
+            result.chroma_red
         );
     }
 
@@ -106,16 +109,19 @@ mod test {
         };
         let result = YCbCrColorFormat::from(&rgb);
         assert!(
-            result.luma >= 0.999999_f32 && result.luma <= 1_f32,
-            "luma is wrong"
+            result.luma >= 126.99999_f32 && result.luma <= 127.00001_f32,
+            "luma is wrong, was {}",
+            result.luma
         );
         assert!(
-            result.chroma_blue >= 0.499999_f32 && result.chroma_blue <= 0.5001,
-            "chroma blue is wrong"
+            result.chroma_blue >= -0.5_f32 && result.chroma_blue <= 0.5_f32,
+            "chroma blue is wrong, was {}",
+            result.chroma_blue
         );
         assert!(
-            result.chroma_red >= 0.499999_f32 && result.chroma_red <= 0.5001,
-            "chroma red is wrong"
+            result.chroma_red >= -0.5_f32 && result.chroma_red <= 0.5_f32,
+            "chroma red is wrong, was {}",
+            result.chroma_red
         );
     }
 
@@ -127,9 +133,9 @@ mod test {
             blue: 0_f32,
         };
         let result = YCbCrColorFormat::from(&rgb);
-        assert_eq!(result.luma, 0_f32, "luma is wrong");
-        assert_eq!(result.chroma_blue, 0.5_f32, "chroma blue is wrong");
-        assert_eq!(result.chroma_red, 0.5_f32, "chroma red is wrong");
+        assert_eq!(result.luma, -128_f32, "luma is wrong");
+        assert_eq!(result.chroma_blue, 0_f32, "chroma blue is wrong");
+        assert_eq!(result.chroma_red, 0_f32, "chroma red is wrong");
     }
 
     #[test]
