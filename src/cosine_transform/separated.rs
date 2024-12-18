@@ -70,13 +70,13 @@ const A: [f32; 64] = [
 ];
 
 impl Discrete8x8CosineTransformer for SeparatedDiscrete8x8CosineTransformer {
-    unsafe fn transform(&self, block_start: *mut f32) {
+    unsafe fn transform(&self, block_start_in: *const f32, block_start_out: *mut f32) {
         let mut intermediate: [f32; 64] = [0.0; 64];
         for i in 0..8 {
             for j in 0..8 {
                 let mut acc: f32 = 0.0;
                 for k in 0..8 {
-                    acc += A[i * 8 + k] * *block_start.add(k * 8 + j);
+                    acc += A[i * 8 + k] * *block_start_in.add(k * 8 + j);
                 }
                 intermediate[i * 8 + j] = acc;
             }
@@ -87,7 +87,7 @@ impl Discrete8x8CosineTransformer for SeparatedDiscrete8x8CosineTransformer {
                 for k in 0..8 {
                     acc += intermediate[i * 8 + k] * A[j * 8 + k];
                 }
-                *block_start.add(i * 8 + j) = acc;
+                *block_start_out.add(i * 8 + j) = acc;
             }
         }
     }
@@ -95,6 +95,7 @@ impl Discrete8x8CosineTransformer for SeparatedDiscrete8x8CosineTransformer {
 
 #[cfg(test)]
 mod test {
+
     use crate::cosine_transform::simple::InverseSimpleDiscrete8x8CosineTransformer;
 
     use super::super::Discrete8x8CosineTransformer;
@@ -140,11 +141,12 @@ mod test {
     #[test]
     fn test_transform_to_frequency_domain_and_back() {
         let deviation = 1e-6_f32;
-        let mut test_block = TEST_BLOCK;
+        let test_block = TEST_BLOCK;
+	let mut out_block: [f32; 64] = [0.0;64];
         unsafe {
-            SeparatedDiscrete8x8CosineTransformer.transform(&raw mut test_block[0]);
+            SeparatedDiscrete8x8CosineTransformer.transform(&raw const test_block[0],&raw mut out_block[0]);
             assert_values_not_zero(&test_block);
-            InverseSimpleDiscrete8x8CosineTransformer.transform(&raw mut test_block[0]);
+            InverseSimpleDiscrete8x8CosineTransformer.transform(&raw const test_block[0],&raw mut out_block[0]);
         }
         for (index, (actual, expected)) in test_block.into_iter().zip(TEST_BLOCK).enumerate() {
             assert_eq_with_deviation(actual, expected, deviation, index);

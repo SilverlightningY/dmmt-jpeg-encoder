@@ -5,10 +5,13 @@ pub mod arai;
 pub mod separated;
 pub mod simple;
 
+pub struct ConstRawPointerWrapper(*const f32);
 pub struct RawPointerWrapper(*mut f32);
 
 unsafe impl Send for RawPointerWrapper {}
 unsafe impl Sync for RawPointerWrapper {}
+unsafe impl Send for ConstRawPointerWrapper {}
+unsafe impl Sync for ConstRawPointerWrapper {}
 
 pub trait Discrete8x8CosineTransformer
 where
@@ -25,7 +28,7 @@ where
     /// values. The caller has to make sure, the array has a length of at least 64 values. If it is
     /// used from multiple threads at the same time, the ranges must not overlap each other.
     /// Otherwise the result can not be foreseen and is considered undefined.
-    unsafe fn transform(&self, block_start: *mut f32);
+    unsafe fn transform(&self, block_start_input: *const f32, block_start_output: *mut f32);
 
     /// Applies the 8x8 discrete cosine transform (DCT) on each 64-value-block by calling the
     /// transform function, beginning each block_start_index.
@@ -35,11 +38,13 @@ where
     /// It requires the same preconditions as the transform function.
     unsafe fn transform_blocks_sequentially(
         &self,
-        block_start: RawPointerWrapper,
+	block_start_input: ConstRawPointerWrapper,
+        block_start_output: RawPointerWrapper,
         block_start_indexes: Vec<usize>,
     ) {
         for block_start_index in block_start_indexes {
-            self.transform(block_start.0.add(block_start_index));
+            self.transform(block_start_input.0.add(block_start_index),
+		block_start_output.0.add(block_start_index));
         }
     }
 
@@ -55,7 +60,8 @@ where
     unsafe fn transform_on_threadpool(
         &'static self,
         threadpool: &ThreadPool,
-        channel: *mut f32,
+	channel_in: *const f32,
+        channel_out: *mut f32,
         channel_length: usize,
         jobs_chunk_size: usize,
     ) {
@@ -64,9 +70,10 @@ where
         for chunk in block_start_index_chunks {
             let block_start_indexes = chunk.to_vec();
             unsafe {
-                let channel_start = RawPointerWrapper(channel);
+		let channel_start_in = ConstRawPointerWrapper(channel_in);
+                let channel_start_out = RawPointerWrapper(channel_out);
                 threadpool.execute(move || {
-                    self.transform_blocks_sequentially(channel_start, block_start_indexes);
+                    self.transform_blocks_sequentially(channel_start_in, channel_start_out, block_start_indexes);
                 });
             }
         }

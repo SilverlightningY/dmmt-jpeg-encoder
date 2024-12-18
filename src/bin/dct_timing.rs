@@ -193,14 +193,16 @@ fn calculate_std_deviation_in_micros(mean: &Duration, measurements: &[Duration])
 }
 
 fn transform_channel(
-    channel: &mut [f32],
+    channel_in: &[f32],
+    channel_out: &mut [f32],
     transformer: &'static impl Discrete8x8CosineTransformer,
     threadpool: &ThreadPool,
 ) -> Duration {
     let start = Instant::now();
     unsafe {
-        let channel_ptr = &raw mut channel[0];
-        transformer.transform_on_threadpool(threadpool, channel_ptr, channel.len(), 700);
+	let channel_in_ptr = &raw const channel_in[0];
+        let channel_ptr = &raw mut channel_out[0];
+        transformer.transform_on_threadpool(threadpool, channel_in_ptr, channel_ptr, channel_in.len(), 700);
     }
     threadpool.join();
     start.elapsed()
@@ -216,11 +218,11 @@ fn measure_image_transformation_n_times(
 
     let mut stdout = stdout();
     println!("Starting measurement");
+    let mut channel_out: Vec<f32> = vec![0.0; channel.len()];
     for round in 1..=n {
         print!("\rRound {}/{}", round, n);
         stdout.flush().unwrap();
-        let mut channel = Vec::from_iter(channel.iter().copied());
-        let duration = transform_channel(&mut channel, transformer, threadpool);
+        let duration = transform_channel(channel, &mut channel_out, transformer, threadpool);
         durations.push(duration);
     }
     println!("\rMeasurement done");

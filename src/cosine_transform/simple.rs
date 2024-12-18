@@ -43,8 +43,8 @@ impl SimpleDiscrete8x8CosineTransformer {
 }
 
 impl Discrete8x8CosineTransformer for SimpleDiscrete8x8CosineTransformer {
-    unsafe fn transform(&self, block_start: *mut f32) {
-        let values = slice::from_raw_parts_mut(block_start, NUMBER_OF_VALUES);
+    unsafe fn transform(&self, block_start_in: *const f32, block_start_out: *mut f32) {
+        let values = slice::from_raw_parts(block_start_in, NUMBER_OF_VALUES);
         let transformed_values = (0..NUMBER_OF_VALUES)
             .map(|index| {
                 let i = index % SQUARE_SIZE;
@@ -52,7 +52,8 @@ impl Discrete8x8CosineTransformer for SimpleDiscrete8x8CosineTransformer {
                 Self::calculate_value(i, j, values)
             })
             .collect::<Vec<f32>>();
-        for (value, t_value) in values.iter_mut().zip(transformed_values.into_iter()) {
+	let values_out = slice::from_raw_parts_mut(block_start_out, NUMBER_OF_VALUES);
+        for (value, t_value) in values_out.iter_mut().zip(transformed_values.into_iter()) {
             *value = t_value;
         }
     }
@@ -83,8 +84,8 @@ impl InverseSimpleDiscrete8x8CosineTransformer {
 }
 
 impl Discrete8x8CosineTransformer for InverseSimpleDiscrete8x8CosineTransformer {
-    unsafe fn transform(&self, block_start: *mut f32) {
-        let values = slice::from_raw_parts_mut(block_start, NUMBER_OF_VALUES);
+    unsafe fn transform(&self, block_start_in: *const f32, block_start_out: *mut f32) {
+        let values = slice::from_raw_parts(block_start_in, NUMBER_OF_VALUES);
         let transformed_values = (0..NUMBER_OF_VALUES)
             .map(|index| {
                 let x = index % SQUARE_SIZE;
@@ -92,7 +93,8 @@ impl Discrete8x8CosineTransformer for InverseSimpleDiscrete8x8CosineTransformer 
                 Self::calculate_value(x, y, values)
             })
             .collect::<Vec<f32>>();
-        for (value, t_value) in values.iter_mut().zip(transformed_values.into_iter()) {
+	let values_out = slice::from_raw_parts_mut(block_start_out, NUMBER_OF_VALUES);
+        for (value, t_value) in values_out.iter_mut().zip(transformed_values.into_iter()) {
             *value = t_value;
         }
     }
@@ -143,11 +145,12 @@ mod test {
     #[test]
     fn test_transform_to_frequency_domain_and_back() {
         let deviation = 1e-6_f32;
-        let mut test_block = TEST_BLOCK;
+        let test_block = TEST_BLOCK;
+	let mut out_block: [f32; 64] = [0.0; 64];
         unsafe {
-            SimpleDiscrete8x8CosineTransformer.transform(&raw mut test_block[0]);
+            SimpleDiscrete8x8CosineTransformer.transform(&raw const  test_block[0], &raw mut out_block[0]);
             assert_values_not_zero(&test_block);
-            InverseSimpleDiscrete8x8CosineTransformer.transform(&raw mut test_block[0]);
+            InverseSimpleDiscrete8x8CosineTransformer.transform(&raw const test_block[0], &raw mut out_block[0]);
         }
         for (index, (actual, expected)) in test_block.into_iter().zip(TEST_BLOCK).enumerate() {
             assert_eq_with_deviation(actual, expected, deviation, index);

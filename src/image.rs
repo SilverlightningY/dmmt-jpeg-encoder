@@ -131,7 +131,7 @@ impl ColorChannel<f32> {
         );
         unsafe {
             let channel_start = &raw mut self.dots[0];
-            transformer.transform_on_threadpool(threadpool, channel_start, channel_length, 700);
+            transformer.transform_on_threadpool(threadpool, channel_start, channel_start, channel_length, 700);
         }
     }
 }

@@ -26,15 +26,15 @@ const S6: f32 = 0.653_281_5;
 const S7: f32 = 1.281_457_7;
 
 impl AraiDiscrete8x8CosineTransformer {
-    unsafe fn fast_arai(block_start: *mut f32, stride: usize) {
-        let p0 = block_start;
-        let p1 = block_start.add(stride);
-        let p2 = block_start.add(2 * stride);
-        let p3 = block_start.add(3 * stride);
-        let p4 = block_start.add(4 * stride);
-        let p5 = block_start.add(5 * stride);
-        let p6 = block_start.add(6 * stride);
-        let p7 = block_start.add(7 * stride);
+    unsafe fn fast_arai(block_start_in: *const f32, block_start_out: *mut f32, stride: usize) {
+        let p0 = block_start_in;
+        let p1 = block_start_in.add(stride);
+        let p2 = block_start_in.add(2 * stride);
+        let p3 = block_start_in.add(3 * stride);
+        let p4 = block_start_in.add(4 * stride);
+        let p5 = block_start_in.add(5 * stride);
+        let p6 = block_start_in.add(6 * stride);
+        let p7 = block_start_in.add(7 * stride);
 
         let v00 = *p0;
         let v01 = *p1;
@@ -81,31 +81,38 @@ impl AraiDiscrete8x8CosineTransformer {
         let v66 = v55 - v46;
         let v67 = v57 - v44;
 
-        *p0 = v30 * S0;
-        *p4 = v31 * S4;
-        *p2 = v52 * S2;
-        *p6 = v53 * S6;
-        *p5 = v64 * S5;
-        *p1 = v65 * S1;
-        *p7 = v66 * S7;
-        *p3 = v67 * S3;
+	let op0 = block_start_out;
+        let op1 = block_start_out.add(stride);
+        let op2 = block_start_out.add(2 * stride);
+        let op3 = block_start_out.add(3 * stride);
+        let op4 = block_start_out.add(4 * stride);
+        let op5 = block_start_out.add(5 * stride);
+        let op6 = block_start_out.add(6 * stride);
+        let op7 = block_start_out.add(7 * stride);
+        *op0 = v30 * S0;
+        *op4 = v31 * S4;
+        *op2 = v52 * S2;
+        *op6 = v53 * S6;
+        *op5 = v64 * S5;
+        *op1 = v65 * S1;
+        *op7 = v66 * S7;
+        *op3 = v67 * S3;
     }
 }
 
 impl Discrete8x8CosineTransformer for AraiDiscrete8x8CosineTransformer {
-    unsafe fn transform(&self, block_start: *mut f32) {
+    unsafe fn transform(&self, block_start_in: *const f32, block_start_out: *mut f32) {
         for i in 0..8 {
-            Self::fast_arai(block_start.offset(i * 8), 1)
+            Self::fast_arai(block_start_in.add(i * 8),block_start_out.add(i * 8), 1)
         }
         for i in 0..8 {
-            Self::fast_arai(block_start.offset(i), 8);
+            Self::fast_arai(block_start_out.add(i),    block_start_out.add(i), 8);
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-
     use super::super::simple::SimpleDiscrete8x8CosineTransformer;
     use super::super::Discrete8x8CosineTransformer;
     use super::{
@@ -189,32 +196,34 @@ mod test {
 
     #[test]
     fn test_fast_simple() {
-        let mut test_values = TEST_VALUES;
-        let mut simple_test_values = TEST_VALUES;
+        let test_values = TEST_VALUES;
+	let mut out_test: [f32; 64] = [0.0;64];
+	let mut out_simple: [f32; 64] = [0.0;64];
 
         unsafe {
-            AraiDiscrete8x8CosineTransformer.transform(&raw mut test_values[0]);
-            SimpleDiscrete8x8CosineTransformer.transform(&raw mut simple_test_values[0]);
+            AraiDiscrete8x8CosineTransformer.transform(&raw const test_values[0], &raw mut out_test[0]);
+            SimpleDiscrete8x8CosineTransformer.transform(&raw const test_values[0], &raw mut out_simple[0]);
         }
         for i in 0..64 {
-            assert_almost_eq(test_values[i], simple_test_values[i], 1e-4, i)
+            assert_almost_eq(out_test[i], out_simple[i], 1e-4, i)
         }
     }
 
     #[test]
     fn compare_fast_own() {
-        let mut input = TEST_VALUES;
+        let input = TEST_VALUES;
+	let mut output: [f32;64] = [0.0;64];
         unsafe {
-            AraiDiscrete8x8CosineTransformer::fast_arai(&raw mut input[0], 1);
+            AraiDiscrete8x8CosineTransformer::fast_arai(&raw const input[0], &raw mut output[0], 1);
         }
         let input2 = TEST_VALUES[0..8].try_into().unwrap();
-        assert_eq!(input[0], y0(input2), "Wrong Y0 calculated");
-        assert_eq!(input[4], y4(input2), "Wrong Y4 calculated");
-        assert_eq!(input[2], y2(input2), "Wrong Y2 calculated");
-        assert_eq!(input[6], y6(input2), "Wrong Y6 calculated");
-        assert_eq!(input[5], y5(input2), "Wrong Y5 calculated");
-        assert_eq!(input[1], y1(input2), "Wrong Y1 calculated");
-        assert_eq!(input[7], y7(input2), "Wrong Y7 calculated");
-        assert_eq!(input[3], y3(input2), "Wrong Y3 calculated");
+        assert_eq!(output[0], y0(input2), "Wrong Y0 calculated");
+        assert_eq!(output[4], y4(input2), "Wrong Y4 calculated");
+        assert_eq!(output[2], y2(input2), "Wrong Y2 calculated");
+        assert_eq!(output[6], y6(input2), "Wrong Y6 calculated");
+        assert_eq!(output[5], y5(input2), "Wrong Y5 calculated");
+        assert_eq!(output[1], y1(input2), "Wrong Y1 calculated");
+        assert_eq!(output[7], y7(input2), "Wrong Y7 calculated");
+        assert_eq!(output[3], y3(input2), "Wrong Y3 calculated");
     }
 }
