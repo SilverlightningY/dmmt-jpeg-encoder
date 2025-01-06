@@ -1,12 +1,12 @@
+use crate::image::subsampling::ChromaSubsamplingPreset;
 use crate::Arguments;
-use crate::ChannelSubsamplingMethod;
-use crate::ChromaSubsamplingPreset;
 use clap::{
     arg, builder::PossibleValue, crate_authors, crate_description, crate_name, crate_version,
     value_parser, Arg, ArgMatches, Command,
 };
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::{io, thread};
 
 pub struct CLIParser {
     command: Command,
@@ -36,7 +36,7 @@ impl CLIParser {
         let command = Self::register_output_file_argument(command);
         let command = Self::register_bits_per_channel_argument(command);
         let command = Self::register_chroma_subsampling_preset_argument(command);
-        Self::register_chroma_subsampling_method_argument(command)
+        Self::register_threads_argument(command)
     }
 
     fn register_input_file_argument(command: Command) -> Command {
@@ -55,8 +55,8 @@ impl CLIParser {
         command.arg(Self::create_chroma_subsampling_preset_argument())
     }
 
-    fn register_chroma_subsampling_method_argument(command: Command) -> Command {
-        command.arg(Self::create_chroma_subsampling_method_argument())
+    fn register_threads_argument(command: Command) -> Command {
+        command.arg(Self::create_threads_argument())
     }
 
     fn create_base_command() -> Command {
@@ -95,10 +95,11 @@ impl CLIParser {
             .default_value("P420").value_parser(value_parser!(ChromaSubsamplingPreset))
     }
 
-    fn create_chroma_subsampling_method_argument() -> Arg {
-        arg!(chroma_subsampling_method: -m --chroma_subsampling_method <METHOD> "Chroma subsampling method")
-            .default_value("Average")
-            .value_parser(value_parser!(ChannelSubsamplingMethod))
+    fn create_threads_argument() -> Arg {
+        arg!(-t --threads <THREADS> "Number of Threads")
+            .default_value(get_number_of_threads().unwrap_or(1).to_string())
+            .required(false)
+            .value_parser(value_parser!(usize))
     }
 
     fn extract_arguments(matches: &ArgMatches) -> Arguments {
@@ -107,7 +108,7 @@ impl CLIParser {
             output_file: Self::extract_output_file_argument(matches),
             chroma_subsampling_preset: Self::extract_chroma_subsampling_preset_argument(matches),
             bits_per_channel: Self::extract_bits_per_channel_argument(matches),
-            chroma_subsampling_method: Self::extract_chroma_subsampling_method_argument(matches),
+            number_of_threads: Self::extract_threads_argument(matches),
         }
     }
 
@@ -140,12 +141,10 @@ impl CLIParser {
             .to_owned()
     }
 
-    fn extract_chroma_subsampling_method_argument(
-        matches: &ArgMatches,
-    ) -> ChannelSubsamplingMethod {
+    fn extract_threads_argument(matches: &ArgMatches) -> usize {
         matches
-            .get_one::<ChannelSubsamplingMethod>("chroma_subsampling_method")
-            .expect("Chroma subsampling method must be provided, but was unset.")
+            .get_one::<usize>("threads")
+            .expect("Required argument threads not provided")
             .to_owned()
     }
 }
@@ -158,13 +157,9 @@ impl Default for CLIParser {
 
 #[cfg(test)]
 mod tests {
-    use core::panic;
-
     use clap::{error::ErrorKind, Command};
 
-    use crate::image::{ChannelSubsamplingMethod, ChromaSubsamplingPreset};
-
-    use super::CLIParser;
+    use super::{CLIParser, ChromaSubsamplingPreset};
 
     const PROGRAM_NAME_ARGUMENT: &str = "test_program_name";
 
@@ -227,17 +222,13 @@ mod tests {
     }
 
     #[test]
-    fn parse_chroma_subsampling_method_argument() {
+    fn parse_number_of_threads_argument() {
         let command = Command::new("test");
-        let command = CLIParser::register_chroma_subsampling_method_argument(command);
-        let matches = command.get_matches_from(vec![
-            PROGRAM_NAME_ARGUMENT,
-            "--chroma_subsampling_method",
-            "Skip",
-        ]);
-        let actual_method = CLIParser::extract_chroma_subsampling_method_argument(&matches);
-        let expected_method = ChannelSubsamplingMethod::Skip;
-        assert_eq!(actual_method, expected_method);
+        let command = CLIParser::register_threads_argument(command);
+        let matches = command.get_matches_from(vec![PROGRAM_NAME_ARGUMENT, "--threads", "5"]);
+        let actual = CLIParser::extract_threads_argument(&matches);
+        let expected = 5;
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -251,6 +242,8 @@ mod tests {
             PROGRAM_NAME_ARGUMENT,
             &input_file_path,
             &output_file_path,
+            "-t",
+            "8",
         ]);
         assert_eq!(
             arguments.input_file.file_name().unwrap(),
@@ -272,9 +265,12 @@ mod tests {
             "chroma_subsampling_preset does not match"
         );
         assert_eq!(
-            arguments.chroma_subsampling_method,
-            ChannelSubsamplingMethod::Average,
-            "chroma_subsampling_method does not match"
+            arguments.number_of_threads, 8,
+            "number_of_threads does not match"
         );
     }
+}
+
+fn get_number_of_threads() -> io::Result<usize> {
+    Ok(thread::available_parallelism()?.get())
 }

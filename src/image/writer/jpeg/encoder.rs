@@ -9,10 +9,6 @@ use std::io::Write;
 use super::OutputImage;
 use crate::logger;
 
-pub struct Encoder<'a, T> {
-    writer: &'a mut T,
-}
-
 const START_OF_FILE_MARKER: [u8; 2] = [0xFF, 0xD8];
 const END_OF_FILE_MARKER: [u8; 2] = [0xFF, 0xD9];
 const HUFFMAN_TABLE_MARKER: [u8; 2] = [0xFF, 0xC4];
@@ -97,18 +93,23 @@ fn create_huffman_lenght_header(code_lengths: &[SymbolCodeLength]) -> [u8; 16] {
     lengths
 }
 
+pub struct Encoder<'a, T> {
+    writer: &'a mut T,
+    image: &'a OutputImage,
+}
+
 impl<'a, T: Write> Encoder<'a, T> {
-    pub fn new(writer: &'a mut T) -> Encoder<'a, T> {
-        Encoder { writer }
+    pub fn new(writer: &'a mut T, image: &'a OutputImage) -> Encoder<'a, T> {
+        Encoder { writer, image }
     }
 
-    pub fn encode(&mut self, image: &OutputImage) -> Result<()> {
+    pub fn encode(&mut self) -> Result<()> {
         self.write_start_of_file()?;
         self.write_jfif_application_header()?;
         // self.write_luminance_quantization_table()?;
         // self.write_chrominance_quantization_table()?;
-        self.write_start_of_frame(image)?;
-        self.write_all_huffman_tables(image)?;
+        self.write_start_of_frame()?;
+        self.write_all_huffman_tables()?;
         // self.write_start_of_scan()?;
         // self.write_image_data()?;
         self.write_end_of_file()?;
@@ -161,11 +162,11 @@ impl<'a, T: Write> Encoder<'a, T> {
             .map_err(|_| Error::FailedToWriteHuffmanTables)
     }
 
-    fn write_all_huffman_tables(&mut self, image: &OutputImage) -> Result<()> {
-        self.write_huffman_table(TableKind::LumaAC, &image.luma_ac_huffman)?;
-        self.write_huffman_table(TableKind::LumaDC, &image.luma_dc_huffman)?;
-        self.write_huffman_table(TableKind::ChromaAC, &image.chroma_ac_huffman)?;
-        self.write_huffman_table(TableKind::ChromaDC, &image.chroma_dc_huffman)
+    fn write_all_huffman_tables(&mut self) -> Result<()> {
+        self.write_huffman_table(TableKind::LumaAC, &self.image.luma_ac_huffman)?;
+        self.write_huffman_table(TableKind::LumaDC, &self.image.luma_dc_huffman)?;
+        self.write_huffman_table(TableKind::ChromaAC, &self.image.chroma_ac_huffman)?;
+        self.write_huffman_table(TableKind::ChromaDC, &self.image.chroma_dc_huffman)
     }
 
     fn write_jfif_application_header(&mut self) -> Result<()> {
@@ -194,14 +195,14 @@ impl<'a, T: Write> Encoder<'a, T> {
             .map_err(|_| Error::FailedToWriteChrominanceQuantizationTable)
     }
 
-    fn write_start_of_frame(&mut self, image: &OutputImage) -> Result<()> {
-        let width_bytes = image.width.to_be_bytes();
-        let height_bytes = image.height.to_be_bytes();
-        let subsampling = image.chroma_subsampling_preset;
+    fn write_start_of_frame(&mut self) -> Result<()> {
+        let width_bytes = self.image.width.to_be_bytes();
+        let height_bytes = self.image.height.to_be_bytes();
+        let subsampling = self.image.chroma_subsampling_preset;
         let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (2 / subsampling.vertical_rate());
         #[rustfmt::skip]
         let content = &[
-            image.bits_per_channel,                   // bits per pixel
+            self.image.bits_per_channel,                   // bits per pixel
             height_bytes[0], height_bytes[1], // image height
             width_bytes[0], width_bytes[1],   // image width
             0x03,                   // components (1 or 3)
@@ -225,12 +226,9 @@ impl<'a, T: Write> Encoder<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        huffman::SymbolCodeLength,
-        image::{encoder::TableKind, ChromaSubsamplingPreset, OutputImage},
-    };
+    use crate::{huffman::SymbolCodeLength, image::subsampling::ChromaSubsamplingPreset};
 
-    use super::Encoder;
+    use super::{super::OutputImage, Encoder, TableKind};
 
     const OUTPUT_IMAGE: OutputImage = OutputImage {
         width: 3,
@@ -246,7 +244,8 @@ mod tests {
     #[test]
     fn test_write_jfif() {
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output);
+        let image = &OUTPUT_IMAGE;
+        let mut encoder = Encoder::new(&mut output, image);
         encoder.write_jfif_application_header().unwrap();
         assert_eq!(
             output,
@@ -260,7 +259,8 @@ mod tests {
     #[test]
     fn test_write_huffman_header() {
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output);
+        let image = &OUTPUT_IMAGE;
+        let mut encoder = Encoder::new(&mut output, image);
         let symdepths =
             [(3, 2), (4, 2), (8, 4), (2, 4), (5, 4), (1, 4)].map(SymbolCodeLength::from);
 
@@ -280,8 +280,9 @@ mod tests {
     #[test]
     fn test_write_start_of_frame() {
         let mut output = Vec::new();
-        let mut encoder = Encoder::new(&mut output);
-        encoder.write_start_of_frame(&OUTPUT_IMAGE).unwrap();
+        let image = &OUTPUT_IMAGE;
+        let mut encoder = Encoder::new(&mut output, image);
+        encoder.write_start_of_frame().unwrap();
 
         let width_bytes = (OUTPUT_IMAGE.width).to_be_bytes();
         let height_bytes = (OUTPUT_IMAGE.height).to_be_bytes();

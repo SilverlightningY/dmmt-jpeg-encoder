@@ -10,7 +10,9 @@ use dmmt_jpeg_encoder::cosine_transform::{
     arai::AraiDiscrete8x8CosineTransformer, separated::SeparatedDiscrete8x8CosineTransformer,
     simple::SimpleDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer,
 };
-use dmmt_jpeg_encoder::image::{ChannelSubsamplingConfig, ChannelSubsamplingMethod, Image};
+use dmmt_jpeg_encoder::image::subsampling::Subsampler;
+use dmmt_jpeg_encoder::image::subsampling::{SubsamplingConfig, SubsamplingMethod};
+use dmmt_jpeg_encoder::image::ColorChannel;
 use threadpool::ThreadPool;
 
 const IMAGE_WIDTH: u16 = 3840;
@@ -145,40 +147,26 @@ struct Measurement {
     number_of_rounds: usize,
 }
 
-fn create_test_color_channel() -> Vec<f32> {
-    (0..IMAGE_SIZE)
+fn create_test_color_channel() -> ColorChannel<f32> {
+    let dots = (0..IMAGE_SIZE)
         .map(|index| {
             let x = index as u16 % IMAGE_WIDTH;
             let y = index as u16 / IMAGE_WIDTH;
             let value = (x + y * 8) % 256;
             value as f32 / 255_f32
         })
-        .collect()
+        .collect::<Vec<f32>>();
+    ColorChannel::new(IMAGE_WIDTH, IMAGE_HEIGHT, dots)
 }
 
-fn create_test_image() -> Image<f32> {
-    let color_channel = create_test_color_channel();
-    Image::new(
-        IMAGE_WIDTH,
-        IMAGE_HEIGHT,
-        color_channel,
-        Vec::new(),
-        Vec::new(),
-    )
-}
-
-fn subsample_luma_channel(image: &Image<f32>) -> Vec<f32> {
-    let subsampling_config = ChannelSubsamplingConfig {
+fn subsample(color_channel: &ColorChannel<f32>) -> Vec<f32> {
+    let subsampling_config = SubsamplingConfig {
         vertical_rate: 1,
         horizontal_rate: 1,
-        method: ChannelSubsamplingMethod::Skip,
+        method: SubsamplingMethod::Skip,
     };
-    image
-        .luma_channel()
-        .subsampling_iter(&subsampling_config)
-        .into_square_iter(8)
-        .flatten()
-        .collect()
+    let subsampler = Subsampler::new(color_channel, &subsampling_config);
+    subsampler.subsample_to_square_structure(8)
 }
 
 fn calculate_std_deviation_in_micros(mean: &Duration, measurements: &[Duration]) -> u64 {
@@ -292,8 +280,8 @@ fn main() {
     let number_of_threads = arguments.threads;
 
     println!("Creating test image");
-    let test_image = create_test_image();
-    let channel = subsample_luma_channel(&test_image);
+    let channel = create_test_color_channel();
+    let channel = subsample(&channel);
     println!("Creating Threadpool with {} threads", number_of_threads);
     let threadpool = ThreadPool::new(number_of_threads);
 
