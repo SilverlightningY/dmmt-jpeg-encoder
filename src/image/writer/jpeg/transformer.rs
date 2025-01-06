@@ -3,6 +3,7 @@ use threadpool::ThreadPool;
 use super::{Image, JpegTransformationOptions, OutputImage};
 use crate::{
     color::YCbCrColorFormat,
+    cosine_transform::{arai::AraiDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer},
     huffman::{
         code::HuffmanCodeGenerator, length_limited::LengthLimitedHuffmanCodeGenerator,
         SymbolCodeLength, SymbolFrequency,
@@ -43,7 +44,7 @@ impl<'a> Transformer<'a> {
         self.image.dots.iter().map(YCbCrColorFormat::from)
     }
 
-    fn split_color_channels(
+    fn split_into_color_channels(
         &self,
         dots: impl Iterator<Item = YCbCrColorFormat<f32>>,
     ) -> SeparateColorChannels<f32> {
@@ -104,6 +105,30 @@ impl<'a> Transformer<'a> {
         }
     }
 
+    fn apply_cosine_transform_on_all_channels_in_place(
+        &self,
+        channels: &mut SeparateColorChannels<f32>,
+    ) {
+        self.apply_cosine_transform_on_channel_in_place(&mut channels.luma);
+        self.apply_cosine_transform_on_channel_in_place(&mut channels.chroma_red);
+        self.apply_cosine_transform_on_channel_in_place(&mut channels.chroma_blue);
+        self.threadpool.join();
+    }
+
+    fn apply_cosine_transform_on_channel_in_place(&self, channel: &mut ColorChannel<f32>) {
+        let channel_length = channel.dots.len();
+        let jobs_chunk_size = 700;
+        unsafe {
+            let channel_start = &raw mut channel.dots[0];
+            AraiDiscrete8x8CosineTransformer.transform_on_threadpool(
+                self.threadpool,
+                channel_start,
+                channel_length,
+                jobs_chunk_size,
+            );
+        }
+    }
+
     fn generate_code_lengths(symfreqs: &[SymbolFrequency]) -> Vec<SymbolCodeLength> {
         let mut generator = LengthLimitedHuffmanCodeGenerator::new(15);
         let mut symlens = generator.generate_with_symbols(symfreqs);
@@ -113,8 +138,13 @@ impl<'a> Transformer<'a> {
 
     pub fn transform(&self) -> Result<OutputImage> {
         let color_dots = self.convert_color_format();
-        let color_channels = self.split_color_channels(color_dots);
-        let color_channels = self.subsample_all_channels(&color_channels);
+        let color_channels = self.split_into_color_channels(color_dots);
+        let mut color_channels = self.subsample_all_channels(&color_channels);
+        self.apply_cosine_transform_on_all_channels_in_place(&mut color_channels);
+
+        // quantization
+        // count symfreqs for huffman code generation
+
         #[rustfmt::skip]
         let mut ac_dummy = [(1, 14), (2, 30), (3, 4), (4, 7), (5, 9), (6, 4), (7, 42), (8, 1),
             (9, 14), (10, 5), (11, 14), (12, 30), (13, 4), (14, 7), (15, 9), (16, 4), (17, 42),
