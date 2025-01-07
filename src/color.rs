@@ -30,6 +30,12 @@ impl From<&RangeColorFormat<u16>> for RGBColorFormat<f32> {
     }
 }
 
+impl From<RangeColorFormat<u16>> for RGBColorFormat<f32> {
+    fn from(value: RangeColorFormat<u16>) -> Self {
+        RGBColorFormat::from(&value)
+    }
+}
+
 impl<T: PartialOrd<T> + Display> RangeColorFormat<T> {
     pub fn new(max: T, red: T, green: T, blue: T) -> Self {
         if red > max || green > max || blue > max {

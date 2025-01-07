@@ -10,4 +10,5 @@ default-run = "dmmt-jpeg-encoder"
 log = "0.4.22"
 log4rs = "1.3.0"
 ctor = "0.2.8"
-clap = { version = ">=4.5.20, <5.0.0", features = ["cargo"] }
+clap = { version = "4.5.23", features = ["cargo", "string"] }
+threadpool = "1.8.1"

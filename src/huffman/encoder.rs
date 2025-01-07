@@ -126,7 +126,7 @@ impl<'a, T: Write> HuffmanEncoder<'a, T> {
     }
 }
 
-impl<'a, T: Write> Write for HuffmanEncoder<'a, T> {
+impl<T: Write> Write for HuffmanEncoder<'_, T> {
     fn write(&mut self, buf: &[Symbol]) -> io::Result<usize> {
         for &symbol in buf {
             let code = self
