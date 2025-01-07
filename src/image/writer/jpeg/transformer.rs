@@ -1,3 +1,5 @@
+use std::{io::Read, thread::AccessError};
+
 use threadpool::ThreadPool;
 
 use super::{Image, JpegTransformationOptions, OutputImage};
@@ -27,6 +29,89 @@ pub struct Transformer<'a> {
     options: &'a JpegTransformationOptions,
     image: &'a Image<f32>,
     threadpool: &'a ThreadPool,
+}
+
+#[derive(Clone,Copy)]
+struct CategoryEncodedInteger {
+    category: u8,
+    pattern: u16
+}
+
+impl From<i16> for CategoryEncodedInteger {
+    fn from(value: i16) -> Self {
+	// which category?
+	let mut cat = 0;
+	if value != 0 {
+	    for c in 0..15 {
+		if value.abs() < (1 << c) {
+		    cat = c;
+		    break;
+		}
+	    }
+	} else {
+	    return CategoryEncodedInteger {
+		category: 0,
+		pattern: 0
+	    };
+	}
+	// which bit pattern?
+	let mut pattern = value.abs() - (1 << (cat-1));
+	if value > 0 {
+	    pattern += 1 << (cat-1);
+	} else {
+	    pattern = ((1 << (cat-1)) - 1) - pattern;
+	}
+	// left-align bit pattern
+	pattern <<= 16 - cat;
+	CategoryEncodedInteger {
+	    category: cat,
+	    pattern: pattern as u16
+	}
+    }
+}
+
+pub struct ACToken {
+    zeros_before: u8,
+    symbol: CategoryEncodedInteger
+}
+
+impl ACToken {
+    pub fn new(zeros_before: u8, symbol: i16) -> Self {
+	Self {
+	    zeros_before,
+	    symbol: CategoryEncodedInteger::from(symbol)
+	}
+    }
+    pub fn get_huffman_encodable_part(&self) -> u8 {
+	let mut result: u8 = 0;
+	result &= self.zeros_before << 4;
+	result &= self.symbol.category;
+	result
+    }
+    pub fn get_pattern(&self) -> CategoryEncodedInteger {
+	self.symbol
+    }
+}
+
+pub fn categorize_ac_tokens<T: Iterator<Item = i16>>(sequence: T) -> Vec<ACToken> {
+    let mut result: Vec<ACToken> = Vec::new();
+    let mut zeros_encountered = 0;
+    for i in sequence {
+	if i == 0 {
+	    zeros_encountered += 1;
+	} else {
+	    while zeros_encountered > 15 {
+		result.push(ACToken::new(zeros_encountered, 0));
+		zeros_encountered -= 16;
+	    }
+	    result.push(ACToken::new(zeros_encountered, i));
+	    zeros_encountered = 0;
+	}
+    }
+    if zeros_encountered != 0 {
+	result.push(ACToken::new(0,0));
+    }
+    result
 }
 
 impl<'a> Transformer<'a> {
@@ -165,5 +250,48 @@ impl<'a> Transformer<'a> {
             chroma_ac_huffman: Self::generate_code_lengths(&ac_dummy),
             chroma_dc_huffman: Self::generate_code_lengths(&ac_dummy),
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{categorize_ac_tokens, ACToken, CategoryEncodedInteger};
+
+    #[test]
+    fn categorize_test() {
+	let expected = vec![
+	    CategoryEncodedInteger {category: 6, pattern: 0b11100100_00000000u16 as u16},
+	    CategoryEncodedInteger {category: 6, pattern: 0b10110100_00000000u16 as u16},
+	    CategoryEncodedInteger {category: 1, pattern: 0b10000000_00000000u16 as u16},
+	    CategoryEncodedInteger {category: 5, pattern: 0b00001000_00000000u16 as u16}];
+	let input: Vec<i16> = vec![57, 45, 1, -30];
+	for i in 0..4 {
+	    let v = input[i];
+	    let r = CategoryEncodedInteger::from(v);
+	    assert_eq!(expected[i].category, r.category);
+	    assert_eq!(expected[i].pattern, r.pattern);
+	}
+    }
+
+
+    #[test]
+    fn categorize_ac_tokens_test() {
+	let test_sequence: Vec<i16> = vec![57,45,0,0,0,0,23,0,-30,-16,0,0,1,0];
+	let expect_sequence: Vec<ACToken> = vec![
+	    ACToken::new(0,57),
+	    ACToken::new(0,45),
+	    ACToken::new(4,23),
+	    ACToken::new(1,-30),
+	    ACToken::new(0,-16),
+	    ACToken::new(2,1),
+	    ACToken::new(0,0),
+	];
+	let got_sequence: Vec<ACToken> = categorize_ac_tokens(test_sequence.into_iter());
+
+	for i in 0..got_sequence.len() {
+	    assert_eq!(got_sequence[i].zeros_before, expect_sequence[i].zeros_before);
+	    assert_eq!(got_sequence[i].symbol.category, expect_sequence[i].symbol.category);
+	    assert_eq!(got_sequence[i].symbol.pattern, expect_sequence[i].symbol.pattern);
+	}
     }
 }
