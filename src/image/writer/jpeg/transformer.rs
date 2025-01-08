@@ -15,6 +15,8 @@ use crate::{
     Result,
 };
 
+mod frequency_block;
+
 struct SeparateColorChannels<T> {
     luma: ColorChannel<T>,
     chroma_red: ColorChannel<T>,

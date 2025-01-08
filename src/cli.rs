@@ -155,6 +155,10 @@ impl Default for CLIParser {
     }
 }
 
+fn get_number_of_threads() -> io::Result<usize> {
+    Ok(thread::available_parallelism()?.get())
+}
+
 #[cfg(test)]
 mod tests {
     use clap::{error::ErrorKind, Command};
@@ -269,8 +273,4 @@ mod tests {
             "number_of_threads does not match"
         );
     }
-}
-
-fn get_number_of_threads() -> io::Result<usize> {
-    Ok(thread::available_parallelism()?.get())
 }
