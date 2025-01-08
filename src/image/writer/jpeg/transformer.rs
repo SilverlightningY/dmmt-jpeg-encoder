@@ -1,5 +1,5 @@
-use std::{io::Read, thread::AccessError};
 
+use quantizer::Quantizer;
 use threadpool::ThreadPool;
 
 use super::{Image, JpegTransformationOptions, OutputImage};
@@ -18,12 +18,15 @@ use crate::{
 };
 
 mod frequency_block;
+mod quantizer;
 
-struct SeparateColorChannels<T> {
-    luma: ColorChannel<T>,
-    chroma_red: ColorChannel<T>,
-    chroma_blue: ColorChannel<T>,
+struct CombinedColorChannels<T> {
+    luma: T,
+    chroma_red: T,
+    chroma_blue: T,
 }
+
+type SeparateColorChannels<T> = CombinedColorChannels<ColorChannel<T>>;
 
 pub struct Transformer<'a> {
     options: &'a JpegTransformationOptions,
@@ -216,6 +219,23 @@ impl<'a> Transformer<'a> {
         }
     }
 
+    fn quantize_all_channels<'b>(
+        &self,
+        channels: &'b SeparateColorChannels<f32>,
+    ) -> CombinedColorChannels<impl Iterator + use<'b>> {
+        let luma_quantizer = Quantizer::new(&channels.luma);
+        let luma = luma_quantizer.quantize_channel();
+        let chroma_red_quantizer = Quantizer::new(&channels.chroma_red);
+        let chroma_red = chroma_red_quantizer.quantize_channel();
+        let chroma_blue_quantizer = Quantizer::new(&channels.chroma_blue);
+        let chroma_blue = chroma_blue_quantizer.quantize_channel();
+        CombinedColorChannels {
+            luma,
+            chroma_red,
+            chroma_blue,
+        }
+    }
+
     fn generate_code_lengths(symfreqs: &[SymbolFrequency]) -> Vec<SymbolCodeLength> {
         let mut generator = LengthLimitedHuffmanCodeGenerator::new(15);
         let mut symlens = generator.generate_with_symbols(symfreqs);
@@ -228,8 +248,8 @@ impl<'a> Transformer<'a> {
         let color_channels = self.split_into_color_channels(color_dots);
         let mut color_channels = self.subsample_all_channels(&color_channels);
         self.apply_cosine_transform_on_all_channels_in_place(&mut color_channels);
+        let quantized_channels = self.quantize_all_channels(&color_channels);
 
-        // quantization
         // count symfreqs for huffman code generation
 
         #[rustfmt::skip]
