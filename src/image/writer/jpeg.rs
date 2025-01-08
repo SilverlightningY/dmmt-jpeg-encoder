@@ -1,7 +1,6 @@
 use std::io::Write;
 
 mod encoder;
-mod quantizer;
 mod transformer;
 
 use encoder::Encoder;
