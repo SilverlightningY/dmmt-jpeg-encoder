@@ -1,4 +1,4 @@
-
+use frequency_block::FrequencyBlock;
 use quantizer::Quantizer;
 use threadpool::ThreadPool;
 
@@ -96,10 +96,10 @@ impl ACToken {
     }
 }
 
-pub fn categorize_ac_tokens<T: Iterator<Item = i16>>(sequence: T) -> Vec<ACToken> {
+pub fn categorize_ac_tokens<'a, T: Iterator<Item = &'a i16>>(sequence: T) -> Vec<ACToken> {
     let mut result: Vec<ACToken> = Vec::new();
     let mut zeros_encountered = 0;
-    for i in sequence {
+    for &i in sequence {
 	if i == 0 {
 	    zeros_encountered += 1;
 	} else {
@@ -115,6 +115,33 @@ pub fn categorize_ac_tokens<T: Iterator<Item = i16>>(sequence: T) -> Vec<ACToken
 	result.push(ACToken::new(0,0));
     }
     result
+}
+
+struct CategorizedBlock {
+    dc_difference: CategoryEncodedInteger,
+    ac_components: Vec<ACToken>
+}
+
+impl CategorizedBlock {
+    pub fn new(dc_difference: CategoryEncodedInteger, ac_components: Vec<ACToken>) -> Self {
+	Self {
+	    dc_difference,
+	    ac_components
+	}
+    }
+}
+
+fn categorize_channel<T: Iterator<Item = FrequencyBlock<i16>>>(frequency_blocks: T) -> Vec<CategorizedBlock> {
+    let mut categorized_blocks: Vec<CategorizedBlock> = Vec::new();
+    let mut last_dc = 0;
+    for frequency_block in frequency_blocks {
+	let current_dc = *frequency_block.dc();
+	let dc_difference_categorized = CategoryEncodedInteger::from(current_dc - last_dc);
+	last_dc = current_dc;
+	let ac_run_length_categorized = categorize_ac_tokens(frequency_block.iter_zig_zag().skip(1));
+	categorized_blocks.push(CategorizedBlock::new(dc_difference_categorized, ac_run_length_categorized));
+    }
+    categorized_blocks
 }
 
 impl<'a> Transformer<'a> {
@@ -222,7 +249,7 @@ impl<'a> Transformer<'a> {
     fn quantize_all_channels<'b>(
         &self,
         channels: &'b SeparateColorChannels<f32>,
-    ) -> CombinedColorChannels<impl Iterator + use<'b>> {
+    ) -> CombinedColorChannels<impl Iterator<Item = FrequencyBlock<i16>> + use<'b>> {
         let luma_quantizer = Quantizer::new(&channels.luma);
         let luma = luma_quantizer.quantize_channel();
         let chroma_red_quantizer = Quantizer::new(&channels.chroma_red);
@@ -234,6 +261,20 @@ impl<'a> Transformer<'a> {
             chroma_red,
             chroma_blue,
         }
+    }
+
+    fn categorize_all_channels(&self,
+			       quantized_channels: CombinedColorChannels<impl Iterator<Item = FrequencyBlock<i16>>>)
+	-> CombinedColorChannels<Vec<CategorizedBlock>>
+    {
+	let luma = categorize_channel(quantized_channels.luma);
+	let chroma_red = categorize_channel(quantized_channels.chroma_red);
+	let chroma_blue = categorize_channel(quantized_channels.chroma_blue);
+	CombinedColorChannels {
+	    luma,
+	    chroma_red,
+	    chroma_blue
+	}
     }
 
     fn generate_code_lengths(symfreqs: &[SymbolFrequency]) -> Vec<SymbolCodeLength> {
@@ -249,6 +290,7 @@ impl<'a> Transformer<'a> {
         let mut color_channels = self.subsample_all_channels(&color_channels);
         self.apply_cosine_transform_on_all_channels_in_place(&mut color_channels);
         let quantized_channels = self.quantize_all_channels(&color_channels);
+	let categorized_channels = self.categorize_all_channels(quantized_channels);
 
         // count symfreqs for huffman code generation
 

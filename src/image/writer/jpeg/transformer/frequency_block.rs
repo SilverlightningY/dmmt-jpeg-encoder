@@ -19,7 +19,7 @@ impl<T> FrequencyBlock<T> {
         ZigZagIterator::from_block(self)
     }
 
-    fn dc(&self) -> &T {
+    pub fn dc(&self) -> &T {
         &self.data[0]
     }
 }
