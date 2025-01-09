@@ -88,8 +88,8 @@ impl ACToken {
 
     fn get_huffman_encodable_part(&self) -> u8 {
         let mut result: u8 = 0;
-        result &= self.zeros_before << 4;
-        result &= self.symbol.category;
+        result |= self.zeros_before << 4;
+        result |= self.symbol.category;
         result
     }
 
@@ -150,6 +150,65 @@ fn categorize_channel<T: Iterator<Item = FrequencyBlock<i16>>>(
         ));
     }
     categorized_blocks
+}
+
+struct HuffmanCount {
+    ac_count: Vec<SymbolFrequency>,
+    dc_count: Vec<SymbolFrequency>,
+}
+
+impl HuffmanCount {
+    pub fn new() -> Self {
+        Self {
+            ac_count: Vec::new(),
+            dc_count: Vec::new(),
+        }
+    }
+}
+
+fn get_huffman_encodable_symbols_and_frequencies_from_channels<
+    'a,
+    T: Iterator<Item = &'a Vec<CategorizedBlock>>,
+>(
+    channels: T,
+) -> HuffmanCount {
+    let mut counts = HuffmanCount::new();
+
+    let mut dc_occurences: [usize; 16] = [0; 16];
+    let mut ac_occurences: [usize; 256] = [0; 256];
+
+    // TODO: clean code, move to helper
+    for channel in channels {
+        for block in channel {
+            let dc_encodable_part = block.dc_difference.category;
+            dc_occurences[dc_encodable_part as usize] += 1;
+            for ac_token in block.ac_components.iter() {
+                let ac_token_encodable_part = ac_token.get_huffman_encodable_part();
+                ac_occurences[ac_token_encodable_part as usize] += 1;
+            }
+        }
+    }
+
+    // TODO: clean code
+    for i in 0..16 {
+        let dc_occurence = dc_occurences[i];
+        if dc_occurence != 0 {
+            counts
+                .dc_count
+                .push(SymbolFrequency::new(i as u8, dc_occurence));
+        }
+    }
+
+    for i in 0..256 {
+        let ac_occurence = ac_occurences[i];
+        if ac_occurence != 0 {
+            counts
+                .ac_count
+                .push(SymbolFrequency::new(i as u8, ac_occurence));
+        }
+    }
+
+    counts
 }
 
 impl<'a> Transformer<'a> {
@@ -325,7 +384,9 @@ impl<'a> Transformer<'a> {
 
 #[cfg(test)]
 mod test {
-    use super::{categorize_ac_tokens, ACToken, CategoryEncodedInteger};
+    use crate::huffman::SymbolFrequency;
+
+    use super::{categorize_ac_tokens, get_huffman_encodable_symbols_and_frequencies_from_channels, ACToken, CategorizedBlock, CategoryEncodedInteger, HuffmanCount};
 
     #[test]
     fn categorize_test() {
@@ -384,5 +445,87 @@ mod test {
                 expect_sequence[i].symbol.pattern
             );
         }
+    }
+
+    #[test]
+    fn count_symbols_and_frequencies_test() {
+        let test_blocks_channel_1: Vec<CategorizedBlock> = vec![
+            CategorizedBlock::new(
+                CategoryEncodedInteger::from(30), // DC symbol: 5
+                vec![
+                    ACToken::new(0, 300), // AC symbol: 0b00001001 x
+                    ACToken::new(15, 0),  // AC symbol: 0b11110000 x
+                    ACToken::new(4, 5),   // AC symbol: 0b01000011 x
+                    ACToken::new(0, 0),   // AC symbol: 0b00000000 x
+                ],
+            ),
+            CategorizedBlock::new(
+                CategoryEncodedInteger::from(0), // DC symbol: 0
+                vec![
+                    ACToken::new(0, 600), // AC symbol: 0b00001010 x
+                    ACToken::new(15, 0),  // AC symbol: 0b11110000 x
+                    ACToken::new(4, 15),  // AC symbol: 0b01000100 x
+                    ACToken::new(0, 0),   // AC symbol: 0b00000000 x
+                ],
+            ),
+        ];
+	let test_blocks_channel_2: Vec<CategorizedBlock> = vec![
+            CategorizedBlock::new(
+                CategoryEncodedInteger::from(60), // DC symbol: 6
+                vec![
+                    ACToken::new(0, 100), // AC symbol: 0b00000111 x
+                    ACToken::new(15, 0),  // AC symbol: 0b11110000 x
+                    ACToken::new(2, 7),   // AC symbol: 0b00100011 x
+                    ACToken::new(0, 0),   // AC symbol: 0b00000000 x
+                ],
+            ),
+            CategorizedBlock::new(
+                CategoryEncodedInteger::from(1), // DC symbol: 1
+                vec![
+                    ACToken::new(0, 900), // AC symbol: 0b00001010 x
+                    ACToken::new(15, 0),  // AC symbol: 0b11110000 x
+                    ACToken::new(0, 1),   // AC symbol: 0b00000001 x
+                    ACToken::new(0, 0),   // AC symbol: 0b00000000 x
+                ],
+            ),
+        ];
+
+	let expected: HuffmanCount = HuffmanCount {
+	    dc_count: vec![SymbolFrequency::new(5,1),SymbolFrequency::new(0,1),SymbolFrequency::new(6,1),SymbolFrequency::new(1,1)],
+	    ac_count: vec![
+		SymbolFrequency::new(0b00001001, 1),
+		SymbolFrequency::new(0b11110000, 4),
+		SymbolFrequency::new(0b01000011, 1),
+		SymbolFrequency::new(0b00000000, 4),
+		SymbolFrequency::new(0b00001010, 2),
+		SymbolFrequency::new(0b01000100, 1),
+		SymbolFrequency::new(0b00000111, 1),
+		SymbolFrequency::new(0b00100011, 1),
+		SymbolFrequency::new(0b00000001, 1),
+	    ]
+	};
+
+	let got = get_huffman_encodable_symbols_and_frequencies_from_channels([test_blocks_channel_1, test_blocks_channel_2].iter());
+
+	for symfreq in got.dc_count.iter() {
+	    let mut found = false;
+	    for comp in expected.dc_count.iter() {
+		if symfreq.symbol == comp.symbol {
+		    assert_eq!(symfreq.frequency, comp.frequency);
+		    found = true;
+		}
+	    }
+	    assert!(found);
+	}
+	for symfreq in got.ac_count.iter() {
+	    let mut found = false;
+	    for comp in expected.ac_count.iter() {
+		if symfreq.symbol == comp.symbol {
+		    assert_eq!(symfreq.frequency, comp.frequency);
+		    found = true;
+		}
+	    }
+	    assert!(found);
+	}
     }
 }
