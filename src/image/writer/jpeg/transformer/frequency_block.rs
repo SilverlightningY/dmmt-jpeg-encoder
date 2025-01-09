@@ -1,5 +1,3 @@
-use std::ops::Sub;
-
 const ZIG_ZAG_ORDERED_BLOCK_INDEXES: [usize; 64] = [
     0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20,
     13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59,
@@ -21,15 +19,6 @@ impl<T> FrequencyBlock<T> {
 
     pub fn dc(&self) -> &T {
         &self.data[0]
-    }
-}
-
-impl<T> FrequencyBlock<T>
-where
-    T: Sub<T, Output = T> + Copy,
-{
-    pub fn sub_dc(&self, other: &FrequencyBlock<T>) -> T {
-        *self.dc() - *other.dc()
     }
 }
 
@@ -98,26 +87,5 @@ mod test {
             actual, expected,
             "Zig Zag Iterator must only return 64 values"
         );
-    }
-
-    const TEST_BLOCK_DATA_2: [u8; 64] = [
-        4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0,
-    ];
-
-    const TEST_BLOCK_DATA_3: [u8; 64] = [
-        3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0,
-    ];
-
-    #[test]
-    fn test_frequency_block_sub_dc() {
-        let block_1 = FrequencyBlock::new(TEST_BLOCK_DATA_2);
-        let block_2 = FrequencyBlock::new(TEST_BLOCK_DATA_3);
-        let actual = block_1.sub_dc(&block_2);
-        let expected = 1;
-        assert_eq!(actual, expected, "Subtraction of DC components failed");
     }
 }
