@@ -11,8 +11,8 @@ impl CategoryEncodedInteger {
         if value == 0 {
             return 0;
         }
-        for category in 0..15 {
-            if value.abs() < (1 << category) {
+        for category in 0..16 {
+            if value.unsigned_abs() < (1 << category) {
                 return category;
             }
         }
@@ -164,6 +164,48 @@ mod test {
                 i
             );
         }
+    }
+
+    #[test]
+    fn test_categorize_integer_max_value() {
+        let expected_length = 15;
+        let expected_pattern = 0b11111111_11111110;
+        let actual = CategoryEncodedInteger::from(32767);
+        assert_eq!(
+            expected_length, actual.pattern_length,
+            "Pattern length does not match"
+        );
+        assert_eq!(expected_pattern, actual.pattern, "Pattern does not match");
+    }
+
+    #[test]
+    fn test_categorize_integer_min_value() {
+        let expected_length = 15;
+        let expected_pattern = 0;
+        let actual = CategoryEncodedInteger::from(-32767);
+        assert_eq!(
+            expected_length, actual.pattern_length,
+            "Pattern length does not match"
+        );
+        assert_eq!(expected_pattern, actual.pattern, "Pattern does not match");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_categorize_integer_lower_than_min_value() {
+        let _ = CategoryEncodedInteger::from(-32768);
+    }
+
+    #[test]
+    fn test_categorize_integer_zero() {
+        let expected_length = 0;
+        let expected_pattern = 0;
+        let actual = CategoryEncodedInteger::from(0);
+        assert_eq!(
+            expected_length, actual.pattern_length,
+            "Pattern length does not match"
+        );
+        assert_eq!(expected_pattern, actual.pattern, "Pattern does not match");
     }
 
     #[test]
