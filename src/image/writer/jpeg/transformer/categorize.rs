@@ -21,7 +21,7 @@ impl CategoryEncodedInteger {
 
     fn calculate_pattern_of(value: i16, category: u8) -> u16 {
         if value.is_positive() {
-            value.unsigned_abs()
+            value as u16
         } else {
             let category_border_marker = 1 << category;
             category_border_marker - 1 - value.unsigned_abs()
