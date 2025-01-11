@@ -18,14 +18,14 @@ use crate::{
     Result,
 };
 
-mod categorize;
+pub mod categorize;
 mod frequency_block;
 mod quantizer;
 
-struct CombinedColorChannels<T> {
-    luma: T,
-    chroma_red: T,
-    chroma_blue: T,
+pub struct CombinedColorChannels<T> {
+    pub luma: T,
+    pub chroma_red: T,
+    pub chroma_blue: T,
 }
 
 type SeparateColorChannels<T> = CombinedColorChannels<ColorChannel<T>>;
@@ -48,14 +48,19 @@ impl HuffmanCount {
             dc_count: Vec::new(),
         }
     }
+
+    pub fn sort_counts_by_frequencies(&mut self) {
+        self.ac_count.sort_by_key(|s| s.frequency);
+        self.dc_count.sort_by_key(|s| s.frequency);
+    }
 }
 
-fn ac_components_into_occurences<'a, T: Iterator<Item = &'a ACToken>>(
+fn ac_components_into_occurences<'a, T: Iterator<Item = &'a categorize::LeadingZerosToken>>(
     ac_components: T,
     ac_occurences: &mut [usize; 256],
 ) {
     for ac_token in ac_components {
-        let ac_token_encodable_part = ac_token.get_huffman_encodable_part();
+        let ac_token_encodable_part = ac_token.combined_symbol();
         ac_occurences[ac_token_encodable_part as usize] += 1;
     }
 }
@@ -66,9 +71,9 @@ fn channel_symbols_into_occurences(
     ac_occurences: &mut [usize; 256],
 ) {
     for block in channel {
-        let dc_encodable_part = block.dc_difference.category;
+        let dc_encodable_part = block.dc_category.pattern_length;
         dc_occurences[dc_encodable_part as usize] += 1;
-        ac_components_into_occurences(block.ac_components.iter(), ac_occurences);
+        ac_components_into_occurences(block.ac_tokens.iter(), ac_occurences);
     }
 }
 
@@ -83,8 +88,7 @@ fn channels_into_occurences<'a, T: Iterator<Item = &'a Vec<CategorizedBlock>>>(
 }
 
 fn counts_into_symbol_frequencies_vec(out: &mut Vec<SymbolFrequency>, occurences: &[usize]) {
-    for i in 0..occurences.len() {
-        let occurence = occurences[i];
+    for (i, &occurence) in occurences.iter().enumerate() {
         if occurence != 0 {
             out.push(SymbolFrequency::new(i as u8, occurence));
         }
@@ -106,6 +110,8 @@ fn get_huffman_encodable_symbols_and_frequencies_from_channels<
 
     counts_into_symbol_frequencies_vec(&mut counts.dc_count, &dc_occurences);
     counts_into_symbol_frequencies_vec(&mut counts.ac_count, &ac_occurences);
+
+    counts.sort_counts_by_frequencies();
 
     counts
 }
@@ -257,25 +263,30 @@ impl<'a> Transformer<'a> {
         let quantized_channels = self.quantize_all_channels(&color_channels);
         let categorized_channels = self.categorize_all_channels(quantized_channels);
 
-        // count symfreqs for huffman code generation
+        let luma_huffman_symbol_counts =
+            get_huffman_encodable_symbols_and_frequencies_from_channels(
+                [&categorized_channels.luma].into_iter(),
+            );
 
-        #[rustfmt::skip]
-        let mut ac_dummy = [(1, 14), (2, 30), (3, 4), (4, 7), (5, 9), (6, 4), (7, 42), (8, 1),
-            (9, 14), (10, 5), (11, 14), (12, 30), (13, 4), (14, 7), (15, 9), (16, 4), (17, 42),
-            (18, 1), (19, 14), (20, 5), (21, 14), (22, 30), (23, 4), (24, 7), (25, 9), (26, 4),
-            (27, 42), (28, 1), (29, 14), (30, 12), (31, 32), (32, 1)]
-            .map(SymbolFrequency::from);
-        ac_dummy.sort_by_key(|f| f.frequency);
+        let chroma_huffman_symbol_counts =
+            get_huffman_encodable_symbols_and_frequencies_from_channels(
+                [
+                    &categorized_channels.chroma_blue,
+                    &categorized_channels.chroma_red,
+                ]
+                .into_iter(),
+            );
 
         Ok(OutputImage {
             width: self.image.width,
             height: self.image.height,
             chroma_subsampling_preset: self.options.chroma_subsampling_preset,
             bits_per_channel: self.options.bits_per_channel,
-            luma_ac_huffman: Self::generate_code_lengths(&ac_dummy),
-            luma_dc_huffman: Self::generate_code_lengths(&ac_dummy),
-            chroma_ac_huffman: Self::generate_code_lengths(&ac_dummy),
-            chroma_dc_huffman: Self::generate_code_lengths(&ac_dummy),
+            luma_ac_huffman: Self::generate_code_lengths(&luma_huffman_symbol_counts.ac_count),
+            luma_dc_huffman: Self::generate_code_lengths(&luma_huffman_symbol_counts.dc_count),
+            chroma_ac_huffman: Self::generate_code_lengths(&chroma_huffman_symbol_counts.ac_count),
+            chroma_dc_huffman: Self::generate_code_lengths(&chroma_huffman_symbol_counts.dc_count),
+	    blockwise_image_data: categorized_channels
         })
     }
 }
@@ -285,8 +296,8 @@ mod test {
     use crate::huffman::SymbolFrequency;
 
     use super::{
-        categorize_ac_tokens, get_huffman_encodable_symbols_and_frequencies_from_channels, ACToken,
-        CategorizedBlock, CategoryEncodedInteger, HuffmanCount,
+        categorize::{CategorizedBlock, CategoryEncodedInteger, LeadingZerosToken},
+        get_huffman_encodable_symbols_and_frequencies_from_channels, HuffmanCount,
     };
 
     #[test]
@@ -295,19 +306,19 @@ mod test {
             CategorizedBlock::new(
                 CategoryEncodedInteger::from(30), // DC symbol: 5
                 vec![
-                    ACToken::new(0, 300), // AC symbol: 0b00001001 x
-                    ACToken::new(15, 0),  // AC symbol: 0b11110000 x
-                    ACToken::new(4, 5),   // AC symbol: 0b01000011 x
-                    ACToken::new(0, 0),   // AC symbol: 0b00000000 x
+                    LeadingZerosToken::new(0, 300), // AC symbol: 0b00001001 x
+                    LeadingZerosToken::new(15, 0),  // AC symbol: 0b11110000 x
+                    LeadingZerosToken::new(4, 5),   // AC symbol: 0b01000011 x
+                    LeadingZerosToken::new(0, 0),   // AC symbol: 0b00000000 x
                 ],
             ),
             CategorizedBlock::new(
                 CategoryEncodedInteger::from(0), // DC symbol: 0
                 vec![
-                    ACToken::new(0, 600), // AC symbol: 0b00001010 x
-                    ACToken::new(15, 0),  // AC symbol: 0b11110000 x
-                    ACToken::new(4, 15),  // AC symbol: 0b01000100 x
-                    ACToken::new(0, 0),   // AC symbol: 0b00000000 x
+                    LeadingZerosToken::new(0, 600), // AC symbol: 0b00001010 x
+                    LeadingZerosToken::new(15, 0),  // AC symbol: 0b11110000 x
+                    LeadingZerosToken::new(4, 15),  // AC symbol: 0b01000100 x
+                    LeadingZerosToken::new(0, 0),   // AC symbol: 0b00000000 x
                 ],
             ),
         ];
@@ -315,19 +326,19 @@ mod test {
             CategorizedBlock::new(
                 CategoryEncodedInteger::from(60), // DC symbol: 6
                 vec![
-                    ACToken::new(0, 100), // AC symbol: 0b00000111 x
-                    ACToken::new(15, 0),  // AC symbol: 0b11110000 x
-                    ACToken::new(2, 7),   // AC symbol: 0b00100011 x
-                    ACToken::new(0, 0),   // AC symbol: 0b00000000 x
+                    LeadingZerosToken::new(0, 100), // AC symbol: 0b00000111 x
+                    LeadingZerosToken::new(15, 0),  // AC symbol: 0b11110000 x
+                    LeadingZerosToken::new(2, 7),   // AC symbol: 0b00100011 x
+                    LeadingZerosToken::new(0, 0),   // AC symbol: 0b00000000 x
                 ],
             ),
             CategorizedBlock::new(
                 CategoryEncodedInteger::from(1), // DC symbol: 1
                 vec![
-                    ACToken::new(0, 900), // AC symbol: 0b00001010 x
-                    ACToken::new(15, 0),  // AC symbol: 0b11110000 x
-                    ACToken::new(0, 1),   // AC symbol: 0b00000001 x
-                    ACToken::new(0, 0),   // AC symbol: 0b00000000 x
+                    LeadingZerosToken::new(0, 900), // AC symbol: 0b00001010 x
+                    LeadingZerosToken::new(15, 0),  // AC symbol: 0b11110000 x
+                    LeadingZerosToken::new(0, 1),   // AC symbol: 0b00000001 x
+                    LeadingZerosToken::new(0, 0),   // AC symbol: 0b00000000 x
                 ],
             ),
         ];
@@ -378,4 +389,3 @@ mod test {
         }
     }
 }
-

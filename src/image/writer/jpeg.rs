@@ -5,7 +5,7 @@ mod transformer;
 
 use encoder::Encoder;
 use threadpool::ThreadPool;
-use transformer::Transformer;
+use transformer::{categorize::CategorizedBlock, CombinedColorChannels, Transformer};
 
 use crate::{
     huffman::SymbolCodeLength,
@@ -72,4 +72,5 @@ struct OutputImage {
     luma_dc_huffman: Vec<SymbolCodeLength>,
     chroma_ac_huffman: Vec<SymbolCodeLength>,
     chroma_dc_huffman: Vec<SymbolCodeLength>,
+    blockwise_image_data: CombinedColorChannels<Vec<CategorizedBlock>>
 }
