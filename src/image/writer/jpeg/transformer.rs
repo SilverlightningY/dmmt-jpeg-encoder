@@ -1,3 +1,4 @@
+use categorize::CategorizedBlock;
 use frequency_block::FrequencyBlock;
 use quantizer::Quantizer;
 use threadpool::ThreadPool;
@@ -17,6 +18,7 @@ use crate::{
     Result,
 };
 
+mod categorize;
 mod frequency_block;
 mod quantizer;
 
@@ -32,124 +34,6 @@ pub struct Transformer<'a> {
     options: &'a JpegTransformationOptions,
     image: &'a Image<f32>,
     threadpool: &'a ThreadPool,
-}
-
-#[derive(Clone, Copy)]
-struct CategoryEncodedInteger {
-    category: u8,
-    pattern: u16,
-}
-
-impl From<i16> for CategoryEncodedInteger {
-    fn from(value: i16) -> Self {
-        // which category?
-        let mut cat = 0;
-        if value != 0 {
-            for c in 0..15 {
-                if value.abs() < (1 << c) {
-                    cat = c;
-                    break;
-                }
-            }
-        } else {
-            return CategoryEncodedInteger {
-                category: 0,
-                pattern: 0,
-            };
-        }
-        // which bit pattern?
-        let mut pattern = value.abs() - (1 << (cat - 1));
-        if value > 0 {
-            pattern += 1 << (cat - 1);
-        } else {
-            pattern = ((1 << (cat - 1)) - 1) - pattern;
-        }
-        // left-align bit pattern
-        pattern <<= 16 - cat;
-        CategoryEncodedInteger {
-            category: cat,
-            pattern: pattern as u16,
-        }
-    }
-}
-
-pub struct ACToken {
-    zeros_before: u8,
-    symbol: CategoryEncodedInteger,
-}
-
-impl ACToken {
-    fn new(zeros_before: u8, symbol: i16) -> Self {
-        Self {
-            zeros_before,
-            symbol: CategoryEncodedInteger::from(symbol),
-        }
-    }
-
-    fn get_huffman_encodable_part(&self) -> u8 {
-        let mut result: u8 = 0;
-        result |= self.zeros_before << 4;
-        result |= self.symbol.category;
-        result
-    }
-
-    fn get_pattern(&self) -> CategoryEncodedInteger {
-        self.symbol
-    }
-}
-
-pub fn categorize_ac_tokens<'a, T: Iterator<Item = &'a i16>>(sequence: T) -> Vec<ACToken> {
-    let mut result: Vec<ACToken> = Vec::new();
-    let mut zeros_encountered = 0;
-    for &i in sequence {
-        if i == 0 {
-            zeros_encountered += 1;
-        } else {
-            while zeros_encountered > 15 {
-                result.push(ACToken::new(zeros_encountered, 0));
-                zeros_encountered -= 16;
-            }
-            result.push(ACToken::new(zeros_encountered, i));
-            zeros_encountered = 0;
-        }
-    }
-    if zeros_encountered != 0 {
-        result.push(ACToken::new(0, 0));
-    }
-    result
-}
-
-struct CategorizedBlock {
-    dc_difference: CategoryEncodedInteger,
-    ac_components: Vec<ACToken>,
-}
-
-impl CategorizedBlock {
-    pub fn new(dc_difference: CategoryEncodedInteger, ac_components: Vec<ACToken>) -> Self {
-        Self {
-            dc_difference,
-            ac_components,
-        }
-    }
-}
-
-fn categorize_channel<T: Iterator<Item = FrequencyBlock<i16>>>(
-    frequency_blocks: T,
-) -> Vec<CategorizedBlock> {
-    let mut categorized_blocks: Vec<CategorizedBlock> = Vec::new();
-    let mut last_dc = 0;
-    for frequency_block in frequency_blocks {
-        let current_dc = *frequency_block.dc();
-        let dc_difference_categorized = CategoryEncodedInteger::from(current_dc - last_dc);
-        last_dc = current_dc;
-        let ac_run_length_categorized =
-            categorize_ac_tokens(frequency_block.iter_zig_zag().skip(1));
-        categorized_blocks.push(CategorizedBlock::new(
-            dc_difference_categorized,
-            ac_run_length_categorized,
-        ));
-    }
-    categorized_blocks
 }
 
 struct HuffmanCount {
@@ -225,7 +109,6 @@ fn get_huffman_encodable_symbols_and_frequencies_from_channels<
 
     counts
 }
-
 impl<'a> Transformer<'a> {
     pub fn new(
         image: &'a Image<f32>,
@@ -349,9 +232,9 @@ impl<'a> Transformer<'a> {
         &self,
         quantized_channels: CombinedColorChannels<impl Iterator<Item = FrequencyBlock<i16>>>,
     ) -> CombinedColorChannels<Vec<CategorizedBlock>> {
-        let luma = categorize_channel(quantized_channels.luma);
-        let chroma_red = categorize_channel(quantized_channels.chroma_red);
-        let chroma_blue = categorize_channel(quantized_channels.chroma_blue);
+        let luma = categorize::categorize_channel(quantized_channels.luma);
+        let chroma_red = categorize::categorize_channel(quantized_channels.chroma_red);
+        let chroma_blue = categorize::categorize_channel(quantized_channels.chroma_blue);
         CombinedColorChannels {
             luma,
             chroma_red,
@@ -405,65 +288,6 @@ mod test {
         categorize_ac_tokens, get_huffman_encodable_symbols_and_frequencies_from_channels, ACToken,
         CategorizedBlock, CategoryEncodedInteger, HuffmanCount,
     };
-
-    #[test]
-    fn categorize_test() {
-        let expected = [
-            CategoryEncodedInteger {
-                category: 6,
-                pattern: 0b11100100_00000000u16,
-            },
-            CategoryEncodedInteger {
-                category: 6,
-                pattern: 0b10110100_00000000u16,
-            },
-            CategoryEncodedInteger {
-                category: 1,
-                pattern: 0b10000000_00000000u16,
-            },
-            CategoryEncodedInteger {
-                category: 5,
-                pattern: 0b00001000_00000000u16,
-            },
-        ];
-        let input: Vec<i16> = vec![57, 45, 1, -30];
-        for i in 0..4 {
-            let v = input[i];
-            let r = CategoryEncodedInteger::from(v);
-            assert_eq!(expected[i].category, r.category);
-            assert_eq!(expected[i].pattern, r.pattern);
-        }
-    }
-
-    #[test]
-    fn categorize_ac_tokens_test() {
-        let test_sequence: Vec<i16> = vec![57, 45, 0, 0, 0, 0, 23, 0, -30, -16, 0, 0, 1, 0];
-        let expect_sequence: Vec<ACToken> = vec![
-            ACToken::new(0, 57),
-            ACToken::new(0, 45),
-            ACToken::new(4, 23),
-            ACToken::new(1, -30),
-            ACToken::new(0, -16),
-            ACToken::new(2, 1),
-            ACToken::new(0, 0),
-        ];
-        let got_sequence: Vec<ACToken> = categorize_ac_tokens(test_sequence.iter());
-
-        for i in 0..got_sequence.len() {
-            assert_eq!(
-                got_sequence[i].zeros_before,
-                expect_sequence[i].zeros_before
-            );
-            assert_eq!(
-                got_sequence[i].symbol.category,
-                expect_sequence[i].symbol.category
-            );
-            assert_eq!(
-                got_sequence[i].symbol.pattern,
-                expect_sequence[i].symbol.pattern
-            );
-        }
-    }
 
     #[test]
     fn count_symbols_and_frequencies_test() {
@@ -554,3 +378,4 @@ mod test {
         }
     }
 }
+
