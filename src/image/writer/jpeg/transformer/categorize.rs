@@ -11,27 +11,26 @@ impl CategoryEncodedInteger {
         if value == 0 {
             return 0;
         }
-        for category in 0..16 {
-            if value.unsigned_abs() < (1 << category) {
-                return category;
-            }
+        let absolute_value = value.unsigned_abs();
+        let category = i16::BITS - absolute_value.leading_zeros();
+        if category > 15 {
+            panic!(
+                "Unable to categorize value '{}' becaues it is out of range",
+                value
+            );
         }
-        panic!(
-            "Unable to categorize value '{}' becaues it is out of range",
-            value
-        );
+        category as u8
     }
 
     fn calculate_pattern_of(value: i16, category: u8) -> u16 {
         if value == 0 {
             return 0;
         }
-        let category_border_marker = 1 << (category - 1);
-        let pattern = value.unsigned_abs() - category_border_marker;
         if value.is_positive() {
-            pattern + category_border_marker
+            value.unsigned_abs()
         } else {
-            category_border_marker - 1 - pattern
+            let category_border_marker = 1 << (category - 1);
+            2 * category_border_marker - 1 - value.unsigned_abs()
         }
     }
 
