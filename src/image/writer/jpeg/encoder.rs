@@ -6,6 +6,8 @@ use std::fmt::Display;
 use std::io;
 use std::io::Write;
 
+use super::transformer::frequency_block::FrequencyBlock;
+use super::transformer::quantizer::QUANTIZATION_TABLE;
 use super::OutputImage;
 use crate::logger;
 
@@ -106,8 +108,7 @@ impl<'a, T: Write> Encoder<'a, T> {
     pub fn encode(&mut self) -> Result<()> {
         self.write_start_of_file()?;
         self.write_jfif_application_header()?;
-        // self.write_luminance_quantization_table()?;
-        // self.write_chrominance_quantization_table()?;
+        self.write_all_quantization_tables()?;
         self.write_start_of_frame()?;
         self.write_all_huffman_tables()?;
         // self.write_start_of_scan()?;
@@ -169,6 +170,23 @@ impl<'a, T: Write> Encoder<'a, T> {
         self.write_huffman_table(TableKind::ChromaDC, &self.image.chroma_dc_huffman)
     }
 
+    fn write_all_quantization_tables(&mut self) -> Result<()> {
+        self.write_quantization_table(0)?;
+        self.write_quantization_table(1)
+    }
+
+    fn write_quantization_table(&mut self, number: u8) -> Result<()> {
+        let mut header: Vec<u8> = Vec::new();
+        header.push(0);
+        header.push(number);
+
+        FrequencyBlock::new(QUANTIZATION_TABLE)
+            .iter_zig_zag()
+            .for_each(|f| header.push(*f));
+        self.write_segment(SegmentMarker::QuantizationTable, &header)
+            .map_err(|_| Error::FailedToWriteQuantizationTable)
+    }
+
     fn write_jfif_application_header(&mut self) -> Result<()> {
         // let width_bytes = image.width.to_be_bytes();
         // let height_bytes = image.height.to_be_bytes();
@@ -183,16 +201,6 @@ impl<'a, T: Write> Encoder<'a, T> {
         ];
         self.write_segment(SegmentMarker::JfifApplication, content)
             .map_err(|_| Error::FailedToWriteJfifApplicationHeader)
-    }
-
-    fn write_luminance_quantization_table(&mut self) -> Result<()> {
-        self.write_segment(SegmentMarker::QuantizationTable, &[])
-            .map_err(|_| Error::FailedToWriteLuminanceQuantizationTable)
-    }
-
-    fn write_chrominance_quantization_table(&mut self) -> Result<()> {
-        self.write_segment(SegmentMarker::QuantizationTable, &[])
-            .map_err(|_| Error::FailedToWriteChrominanceQuantizationTable)
     }
 
     fn write_start_of_frame(&mut self) -> Result<()> {
