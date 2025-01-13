@@ -25,6 +25,11 @@ mod logger;
 
 pub type Result<T> = std::result::Result<T, error::Error>;
 
+pub trait BitPattern {
+    fn to_bytes(&self) -> Box<[u8]>;
+    fn bit_len(&self) -> usize;
+}
+
 pub struct Arguments {
     input_file: PathBuf,
     output_file: PathBuf,

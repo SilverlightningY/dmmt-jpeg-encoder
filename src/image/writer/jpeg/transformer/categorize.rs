@@ -1,9 +1,21 @@
+use crate::BitPattern;
+
 use super::frequency_block::FrequencyBlock;
 
 #[derive(Clone, Copy)]
 pub struct CategoryEncodedInteger {
-    pub pattern_length: u8,
-    pub pattern: u16,
+    pattern_length: u8,
+    pattern: u16,
+}
+
+impl BitPattern for CategoryEncodedInteger {
+    fn to_bytes(&self) -> Box<[u8]> {
+        Box::new(self.pattern.to_be_bytes())
+    }
+
+    fn bit_len(&self) -> usize {
+        self.pattern_length as usize
+    }
 }
 
 impl CategoryEncodedInteger {
@@ -92,6 +104,7 @@ pub struct CategorizedBlock {
 }
 
 impl CategorizedBlock {
+    #[cfg(test)]
     pub fn new(dc_category: CategoryEncodedInteger, ac_tokens: Vec<LeadingZerosToken>) -> Self {
         Self {
             dc_category,
@@ -99,7 +112,7 @@ impl CategorizedBlock {
         }
     }
 
-    pub fn iter_ac_symbols<'a>(&'a self) -> impl Iterator<Item = u8> + use<'a> {
+    pub fn iter_ac_symbols(&self) -> impl Iterator<Item = u8> + use<'_> {
         self.ac_tokens.iter().map(|t| t.combined_symbol())
     }
 

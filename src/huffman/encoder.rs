@@ -1,11 +1,11 @@
-use crate::binary_stream::BitWriter;
+use crate::{binary_stream::BitWriter, BitPattern};
 use std::io::{self, Write};
 
 use super::{Symbol, SymbolCodeLength};
 
 type CodeBitPattern = u16;
 
-struct CodeWord {
+pub struct CodeWord {
     bit_pattern: CodeBitPattern,
     length: usize,
 }
@@ -19,22 +19,21 @@ impl From<(CodeBitPattern, usize)> for CodeWord {
     }
 }
 
-pub struct HuffmanEncoder<'a, T: Write> {
-    writer: &'a mut BitWriter<'a, T>,
+impl BitPattern for CodeWord {
+    fn to_bytes(&self) -> Box<[u8]> {
+        Box::new(self.bit_pattern.to_be_bytes())
+    }
+
+    fn bit_len(&self) -> usize {
+        self.length
+    }
+}
+
+pub struct HuffmanTranslator {
     code_word_lookup_table: [Option<CodeWord>; Symbol::MAX as usize],
 }
 
-impl<'a, T: Write> HuffmanEncoder<'a, T> {
-    pub fn new(writer: &'a mut BitWriter<'a, T>, code_lengths: &[SymbolCodeLength]) -> Self {
-        Self::validate_input_code_lengths(code_lengths);
-        let mut encoder = HuffmanEncoder {
-            writer,
-            code_word_lookup_table: [const { None }; Symbol::MAX as usize],
-        };
-        encoder.fill_lookup_table(code_lengths);
-        encoder
-    }
-
+impl HuffmanTranslator {
     fn fill_lookup_table(&mut self, code_lengths: &[SymbolCodeLength]) {
         self.insert_initial_code_word(code_lengths);
         self.insert_following_code_words(code_lengths);
@@ -87,7 +86,7 @@ impl<'a, T: Write> HuffmanEncoder<'a, T> {
         self.code_word_lookup_table[symbol as usize] = Some(code_word);
     }
 
-    fn get_code_word_for_symbol(&self, symbol: Symbol) -> &Option<CodeWord> {
+    pub fn get_code_word_for_symbol(&self, symbol: Symbol) -> &Option<CodeWord> {
         &self.code_word_lookup_table[symbol as usize]
     }
 
@@ -126,15 +125,40 @@ impl<'a, T: Write> HuffmanEncoder<'a, T> {
     }
 }
 
-impl<T: Write> Write for HuffmanEncoder<'_, T> {
+impl From<&[SymbolCodeLength]> for HuffmanTranslator {
+    fn from(code_lengths: &[SymbolCodeLength]) -> Self {
+        Self::validate_input_code_lengths(code_lengths);
+        let mut encoder = HuffmanTranslator {
+            code_word_lookup_table: [const { None }; Symbol::MAX as usize],
+        };
+        encoder.fill_lookup_table(code_lengths);
+        encoder
+    }
+}
+
+pub struct HuffmanWriter<'a, T: Write> {
+    translator: &'a HuffmanTranslator,
+    writer: &'a mut BitWriter<'a, T>,
+}
+
+impl<'a, T: Write> HuffmanWriter<'a, T> {
+    pub fn new(translator: &'a HuffmanTranslator, writer: &'a mut BitWriter<'a, T>) -> Self {
+        Self {
+            translator,
+            writer,
+        }
+    }
+}
+
+impl<T: Write> Write for HuffmanWriter<'_, T> {
     fn write(&mut self, buf: &[Symbol]) -> io::Result<usize> {
         for &symbol in buf {
             let code = self
+                .translator
                 .get_code_word_for_symbol(symbol)
                 .as_ref()
                 .ok_or(io::Error::from(io::ErrorKind::InvalidInput))?;
-            let bytes = code.bit_pattern.to_be_bytes();
-            self.writer.write_bits(&bytes, code.length)?;
+            self.writer.write_bit_pattern(code)?;
         }
         Ok(buf.len())
     }
@@ -152,25 +176,21 @@ mod test {
         code::HuffmanCodeGenerator, length_limited::LengthLimitedHuffmanCodeGenerator,
         SymbolCodeLength, SymbolFrequency,
     };
-    use super::{CodeWord, HuffmanEncoder};
+    use super::{CodeWord, HuffmanTranslator, HuffmanWriter};
     use crate::binary_stream::BitWriter;
 
     #[test]
     #[should_panic]
     fn test_unsorted_symbols() {
-        let mut output: Vec<u8> = Vec::new();
-        let mut writer = BitWriter::new(&mut output, true);
         let unsorted_symbols = [(0, 1), (1, 5), (2, 4), (3, 3)].map(SymbolCodeLength::from);
-        let _ = HuffmanEncoder::new(&mut writer, &unsorted_symbols);
+        let _ = HuffmanTranslator::from(unsorted_symbols.as_slice());
     }
 
     #[test]
     #[should_panic]
     fn test_max_code_length_too_long() {
-        let mut output: Vec<u8> = Vec::new();
-        let mut writer = BitWriter::new(&mut output, true);
         let symbols = [(0, 17), (1, 5), (2, 4), (3, 3)].map(SymbolCodeLength::from);
-        let _ = HuffmanEncoder::new(&mut writer, &symbols);
+        let _ = HuffmanTranslator::from(symbols.as_slice());
     }
 
     const TEST_SYMBOL_SEQUENCE: &[u8] = &[
@@ -191,15 +211,14 @@ mod test {
         (20,5), (21, 14), (22, 30), (23, 4), (24, 7), (25, 9), (26, 4), (27, 42), (28, 1), 
         (29, 14), (30, 12), (31, 32), (32, 1)];
 
-    fn create_test_encoder<'a, T: Write>(
+    fn create_test_translator(
         sorted_frequencies: &[SymbolFrequency],
         length: usize,
-        writer: &'a mut BitWriter<'a, T>,
-    ) -> HuffmanEncoder<'a, T> {
+    ) -> HuffmanTranslator {
         let mut generator = LengthLimitedHuffmanCodeGenerator::new(length);
         let mut code_lengths = generator.generate_with_symbols(sorted_frequencies);
         code_lengths[0].length += 1;
-        HuffmanEncoder::new(writer, &code_lengths)
+        HuffmanTranslator::from(code_lengths.as_slice())
     }
 
     #[test]
@@ -209,10 +228,11 @@ mod test {
 
         let mut output: Vec<u8> = Vec::new();
         let mut writer = BitWriter::new(&mut output, false);
-        let mut encoder = create_test_encoder(&sorted_syms, 6, &mut writer);
+        let translator = create_test_translator(&sorted_syms, 6);
+        let mut writer = HuffmanWriter::new(&translator, &mut writer);
 
-        encoder.write_all(TEST_SYMBOL_SEQUENCE)?;
-        encoder.flush()?;
+        writer.write_all(TEST_SYMBOL_SEQUENCE)?;
+        writer.flush()?;
 
         assert_eq!(
             TEST_BYTE_SEQUENCE.len(),
@@ -237,7 +257,7 @@ mod test {
             bit_pattern: 0b1100_0000_0000_0000,
             length: 4,
         };
-        let pattern = HuffmanEncoder::<Vec<u8>>::calculate_bit_pattern(&previous_code_word);
+        let pattern = HuffmanTranslator::calculate_bit_pattern(&previous_code_word);
         let expected_pattern = 0b1101_0000_0000_0000u16;
         assert_eq!(pattern, expected_pattern, "Pattern does not match");
     }
@@ -248,7 +268,7 @@ mod test {
             bit_pattern: 0b1101_0000_0000_0000u16,
             length: 5,
         };
-        let pattern = HuffmanEncoder::<Vec<u8>>::calculate_bit_pattern(&previous_code_word);
+        let pattern = HuffmanTranslator::calculate_bit_pattern(&previous_code_word);
         let expected_pattern = 0b1101_1000_0000_0000u16;
         assert_eq!(pattern, expected_pattern, "Pattern does not match");
     }
@@ -259,7 +279,7 @@ mod test {
             bit_pattern: 0b1111_0000_0000_0000u16,
             length: 5,
         };
-        let pattern = HuffmanEncoder::<Vec<u8>>::calculate_bit_pattern(&previous_code_word);
+        let pattern = HuffmanTranslator::calculate_bit_pattern(&previous_code_word);
         let expected_pattern = 0b1111_1000_0000_0000u16;
         assert_eq!(pattern, expected_pattern, "Pattern does not match");
     }
