@@ -137,12 +137,12 @@ impl <'a, T> From<T> for HuffmanTranslator
         T: IntoIterator<Item = &'a SymbolCodeLength, IntoIter = Iter<'a, SymbolCodeLength>>,
 {
     fn from(code_lengths: T) -> Self {
-        let code_length_iterator = code_lengths.into_iter();
-        Self::validate_input_code_lengths(code_length_iterator.clone().as_slice());
+        let code_lengths_iterator = code_lengths.into_iter();
+        Self::validate_input_code_lengths(code_lengths_iterator.clone().as_slice());
         let mut encoder = HuffmanTranslator {
             code_word_lookup_table: [const { None }; Symbol::MAX as usize],
         };
-        encoder.fill_lookup_table(code_length_iterator);
+        encoder.fill_lookup_table(code_lengths_iterator);
         encoder
     }
 }
