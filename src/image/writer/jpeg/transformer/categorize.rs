@@ -81,8 +81,8 @@ impl LeadingZerosToken {
 }
 
 pub struct CategorizedBlock {
-    pub dc_category: CategoryEncodedInteger,
-    pub ac_tokens: Vec<LeadingZerosToken>,
+    dc_category: CategoryEncodedInteger,
+    ac_tokens: Vec<LeadingZerosToken>,
 }
 
 impl CategorizedBlock {
@@ -91,6 +91,14 @@ impl CategorizedBlock {
             dc_category,
             ac_tokens,
         }
+    }
+
+    pub fn iter_ac_symbols<'a>(&'a self) -> impl Iterator<Item = u8> + use<'a> {
+        self.ac_tokens.iter().map(|t| t.combined_symbol())
+    }
+
+    pub fn dc_symbol(&self) -> u8 {
+        self.dc_category.pattern_length
     }
 }
 

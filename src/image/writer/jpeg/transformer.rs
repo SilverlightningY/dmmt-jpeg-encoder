@@ -1,16 +1,13 @@
 use categorize::CategorizedBlock;
 use frequency_block::FrequencyBlock;
 use quantizer::Quantizer;
+use symbol_counting::HuffmanCount;
 use threadpool::ThreadPool;
 
 use super::{Image, JpegTransformationOptions, OutputImage};
 use crate::{
     color::YCbCrColorFormat,
     cosine_transform::{arai::AraiDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer},
-    huffman::{
-        code::HuffmanCodeGenerator, length_limited::LengthLimitedHuffmanCodeGenerator,
-        SymbolCodeLength, SymbolFrequency,
-    },
     image::{
         subsampling::{Subsampler, SubsamplingConfig, SubsamplingMethod},
         ColorChannel,
@@ -21,6 +18,7 @@ use crate::{
 pub mod categorize;
 mod frequency_block;
 mod quantizer;
+mod symbol_counting;
 
 pub struct CombinedColorChannels<T> {
     pub luma: T,
@@ -36,85 +34,6 @@ pub struct Transformer<'a> {
     threadpool: &'a ThreadPool,
 }
 
-struct HuffmanCount {
-    ac_count: Vec<SymbolFrequency>,
-    dc_count: Vec<SymbolFrequency>,
-}
-
-impl HuffmanCount {
-    pub fn new() -> Self {
-        Self {
-            ac_count: Vec::new(),
-            dc_count: Vec::new(),
-        }
-    }
-
-    pub fn sort_counts_by_frequencies(&mut self) {
-        self.ac_count.sort_by_key(|s| s.frequency);
-        self.dc_count.sort_by_key(|s| s.frequency);
-    }
-}
-
-fn ac_components_into_occurences<'a, T: Iterator<Item = &'a categorize::LeadingZerosToken>>(
-    ac_components: T,
-    ac_occurences: &mut [usize; 256],
-) {
-    for ac_token in ac_components {
-        let ac_token_encodable_part = ac_token.combined_symbol();
-        ac_occurences[ac_token_encodable_part as usize] += 1;
-    }
-}
-
-fn channel_symbols_into_occurences(
-    channel: &Vec<CategorizedBlock>,
-    dc_occurences: &mut [usize; 16],
-    ac_occurences: &mut [usize; 256],
-) {
-    for block in channel {
-        let dc_encodable_part = block.dc_category.pattern_length;
-        dc_occurences[dc_encodable_part as usize] += 1;
-        ac_components_into_occurences(block.ac_tokens.iter(), ac_occurences);
-    }
-}
-
-fn channels_into_occurences<'a, T: Iterator<Item = &'a Vec<CategorizedBlock>>>(
-    channels: T,
-    dc_occurences: &mut [usize; 16],
-    ac_occurences: &mut [usize; 256],
-) {
-    for channel in channels {
-        channel_symbols_into_occurences(channel, dc_occurences, ac_occurences);
-    }
-}
-
-fn counts_into_symbol_frequencies_vec(out: &mut Vec<SymbolFrequency>, occurences: &[usize]) {
-    for (i, &occurence) in occurences.iter().enumerate() {
-        if occurence != 0 {
-            out.push(SymbolFrequency::new(i as u8, occurence));
-        }
-    }
-}
-
-fn get_huffman_encodable_symbols_and_frequencies_from_channels<
-    'a,
-    T: Iterator<Item = &'a Vec<CategorizedBlock>>,
->(
-    channels: T,
-) -> HuffmanCount {
-    let mut counts = HuffmanCount::new();
-
-    let mut dc_occurences: [usize; 16] = [0; 16];
-    let mut ac_occurences: [usize; 256] = [0; 256];
-
-    channels_into_occurences(channels, &mut dc_occurences, &mut ac_occurences);
-
-    counts_into_symbol_frequencies_vec(&mut counts.dc_count, &dc_occurences);
-    counts_into_symbol_frequencies_vec(&mut counts.ac_count, &ac_occurences);
-
-    counts.sort_counts_by_frequencies();
-
-    counts
-}
 impl<'a> Transformer<'a> {
     pub fn new(
         image: &'a Image<f32>,
@@ -248,13 +167,6 @@ impl<'a> Transformer<'a> {
         }
     }
 
-    fn generate_code_lengths(symfreqs: &[SymbolFrequency]) -> Vec<SymbolCodeLength> {
-        let mut generator = LengthLimitedHuffmanCodeGenerator::new(15);
-        let mut symlens = generator.generate_with_symbols(symfreqs);
-        symlens[0].length += 1;
-        symlens
-    }
-
     pub fn transform(&self) -> Result<OutputImage> {
         let color_dots = self.convert_color_format();
         let color_channels = self.split_into_color_channels(color_dots);
@@ -263,129 +175,25 @@ impl<'a> Transformer<'a> {
         let quantized_channels = self.quantize_all_channels(&color_channels);
         let categorized_channels = self.categorize_all_channels(quantized_channels);
 
-        let luma_huffman_symbol_counts =
-            get_huffman_encodable_symbols_and_frequencies_from_channels(
-                [&categorized_channels.luma].into_iter(),
-            );
+        let luma_huffman_symbol_counts = HuffmanCount::from(&categorized_channels.luma);
 
-        let chroma_huffman_symbol_counts =
-            get_huffman_encodable_symbols_and_frequencies_from_channels(
-                [
-                    &categorized_channels.chroma_blue,
-                    &categorized_channels.chroma_red,
-                ]
-                .into_iter(),
-            );
+        let chroma_huffman_symbol_counts = HuffmanCount::from_iter(
+            categorized_channels
+                .chroma_blue
+                .iter()
+                .chain(categorized_channels.chroma_red.iter()),
+        );
 
         Ok(OutputImage {
             width: self.image.width,
             height: self.image.height,
             chroma_subsampling_preset: self.options.chroma_subsampling_preset,
             bits_per_channel: self.options.bits_per_channel,
-            luma_ac_huffman: Self::generate_code_lengths(&luma_huffman_symbol_counts.ac_count),
-            luma_dc_huffman: Self::generate_code_lengths(&luma_huffman_symbol_counts.dc_count),
-            chroma_ac_huffman: Self::generate_code_lengths(&chroma_huffman_symbol_counts.ac_count),
-            chroma_dc_huffman: Self::generate_code_lengths(&chroma_huffman_symbol_counts.dc_count),
-	    blockwise_image_data: categorized_channels
+            luma_ac_huffman: luma_huffman_symbol_counts.generate_ac_huffman_code(),
+            luma_dc_huffman: luma_huffman_symbol_counts.generate_dc_huffman_code(),
+            chroma_ac_huffman: chroma_huffman_symbol_counts.generate_ac_huffman_code(),
+            chroma_dc_huffman: chroma_huffman_symbol_counts.generate_dc_huffman_code(),
+            blockwise_image_data: categorized_channels,
         })
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::huffman::SymbolFrequency;
-
-    use super::{
-        categorize::{CategorizedBlock, CategoryEncodedInteger, LeadingZerosToken},
-        get_huffman_encodable_symbols_and_frequencies_from_channels, HuffmanCount,
-    };
-
-    #[test]
-    fn count_symbols_and_frequencies_test() {
-        let test_blocks_channel_1: Vec<CategorizedBlock> = vec![
-            CategorizedBlock::new(
-                CategoryEncodedInteger::from(30), // DC symbol: 5
-                vec![
-                    LeadingZerosToken::new(0, 300), // AC symbol: 0b00001001 x
-                    LeadingZerosToken::new(15, 0),  // AC symbol: 0b11110000 x
-                    LeadingZerosToken::new(4, 5),   // AC symbol: 0b01000011 x
-                    LeadingZerosToken::new(0, 0),   // AC symbol: 0b00000000 x
-                ],
-            ),
-            CategorizedBlock::new(
-                CategoryEncodedInteger::from(0), // DC symbol: 0
-                vec![
-                    LeadingZerosToken::new(0, 600), // AC symbol: 0b00001010 x
-                    LeadingZerosToken::new(15, 0),  // AC symbol: 0b11110000 x
-                    LeadingZerosToken::new(4, 15),  // AC symbol: 0b01000100 x
-                    LeadingZerosToken::new(0, 0),   // AC symbol: 0b00000000 x
-                ],
-            ),
-        ];
-        let test_blocks_channel_2: Vec<CategorizedBlock> = vec![
-            CategorizedBlock::new(
-                CategoryEncodedInteger::from(60), // DC symbol: 6
-                vec![
-                    LeadingZerosToken::new(0, 100), // AC symbol: 0b00000111 x
-                    LeadingZerosToken::new(15, 0),  // AC symbol: 0b11110000 x
-                    LeadingZerosToken::new(2, 7),   // AC symbol: 0b00100011 x
-                    LeadingZerosToken::new(0, 0),   // AC symbol: 0b00000000 x
-                ],
-            ),
-            CategorizedBlock::new(
-                CategoryEncodedInteger::from(1), // DC symbol: 1
-                vec![
-                    LeadingZerosToken::new(0, 900), // AC symbol: 0b00001010 x
-                    LeadingZerosToken::new(15, 0),  // AC symbol: 0b11110000 x
-                    LeadingZerosToken::new(0, 1),   // AC symbol: 0b00000001 x
-                    LeadingZerosToken::new(0, 0),   // AC symbol: 0b00000000 x
-                ],
-            ),
-        ];
-
-        let expected: HuffmanCount = HuffmanCount {
-            dc_count: vec![
-                SymbolFrequency::new(5, 1),
-                SymbolFrequency::new(0, 1),
-                SymbolFrequency::new(6, 1),
-                SymbolFrequency::new(1, 1),
-            ],
-            ac_count: vec![
-                SymbolFrequency::new(0b00001001, 1),
-                SymbolFrequency::new(0b11110000, 4),
-                SymbolFrequency::new(0b01000011, 1),
-                SymbolFrequency::new(0b00000000, 4),
-                SymbolFrequency::new(0b00001010, 2),
-                SymbolFrequency::new(0b01000100, 1),
-                SymbolFrequency::new(0b00000111, 1),
-                SymbolFrequency::new(0b00100011, 1),
-                SymbolFrequency::new(0b00000001, 1),
-            ],
-        };
-
-        let got = get_huffman_encodable_symbols_and_frequencies_from_channels(
-            [test_blocks_channel_1, test_blocks_channel_2].iter(),
-        );
-
-        for symfreq in got.dc_count.iter() {
-            let mut found = false;
-            for comp in expected.dc_count.iter() {
-                if symfreq.symbol == comp.symbol {
-                    assert_eq!(symfreq.frequency, comp.frequency);
-                    found = true;
-                }
-            }
-            assert!(found);
-        }
-        for symfreq in got.ac_count.iter() {
-            let mut found = false;
-            for comp in expected.ac_count.iter() {
-                if symfreq.symbol == comp.symbol {
-                    assert_eq!(symfreq.frequency, comp.frequency);
-                    found = true;
-                }
-            }
-            assert!(found);
-        }
     }
 }
