@@ -28,7 +28,7 @@ fn main() {
     let mut writer = BitWriter::new(&mut output, true);
     let mut code_lengths = generator.generate_with_symbols(&syms_and_freqs);
     code_lengths[0].length += 1;
-    let translator = HuffmanTranslator::from(code_lengths.as_slice());
+    let translator = HuffmanTranslator::from(&code_lengths);
     let mut encoder = HuffmanWriter::new(&translator, &mut writer);
 
     /* an example sequence to encode that roughly matches the relative frequencies at the beginning */

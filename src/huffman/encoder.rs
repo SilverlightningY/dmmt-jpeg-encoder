@@ -1,5 +1,8 @@
 use crate::{binary_stream::BitWriter, BitPattern};
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    slice::Iter,
+};
 
 use super::{Symbol, SymbolCodeLength};
 
@@ -33,38 +36,35 @@ pub struct HuffmanTranslator {
     code_word_lookup_table: [Option<CodeWord>; Symbol::MAX as usize],
 }
 
-impl HuffmanTranslator {
-    fn fill_lookup_table(&mut self, code_lengths: &[SymbolCodeLength]) {
-        self.insert_initial_code_word(code_lengths);
+impl<'a> HuffmanTranslator {
+    fn fill_lookup_table(&mut self, code_lengths: Iter<'a, SymbolCodeLength>)
+    {
+        self.insert_initial_code_word(code_lengths.clone());
         self.insert_following_code_words(code_lengths);
     }
 
-    fn insert_initial_code_word(&mut self, code_lengths: &[SymbolCodeLength]) {
-        let last_code_length = code_lengths.last().expect("code_lengths must not be empty");
+    fn insert_initial_code_word(&mut self, code_lengths: Iter<'a, SymbolCodeLength>) {
+        let last_code_length: &SymbolCodeLength =
+            code_lengths.last().expect("code_lengths must not be empty");
         let code_word = Self::create_initial_code_word(last_code_length);
         self.set_code_word_for_symbol(last_code_length.symbol, code_word);
     }
 
-    fn insert_following_code_words(&mut self, code_lengths: &[SymbolCodeLength]) {
+    fn insert_following_code_words(&mut self, code_lengths: Iter<'a, SymbolCodeLength>) {
+        let rev_iterator = code_lengths.clone().rev();
         for (current, previous) in code_lengths
-            .iter()
             .rev()
             .skip(1)
-            .zip(code_lengths.iter().rev())
+            .zip(rev_iterator)
         {
             self.ensure_symbol_was_not_inserted_before(current.symbol);
             let code_word = self.create_code_word(current.length, previous.symbol);
             self.set_code_word_for_symbol(current.symbol, code_word);
         }
     }
+}
 
-    fn create_initial_code_word(code_length: &SymbolCodeLength) -> CodeWord {
-        CodeWord {
-            bit_pattern: 0,
-            length: code_length.length,
-        }
-    }
-
+impl HuffmanTranslator {
     fn create_code_word(&self, length: usize, previous_symbol: Symbol) -> CodeWord {
         let previous_code_word = self
             .get_code_word_for_symbol(previous_symbol)
@@ -74,6 +74,13 @@ impl HuffmanTranslator {
         CodeWord {
             length,
             bit_pattern,
+        }
+    }
+
+    fn create_initial_code_word(code_length: &SymbolCodeLength) -> CodeWord {
+        CodeWord {
+            bit_pattern: 0,
+            length: code_length.length,
         }
     }
 
@@ -125,13 +132,17 @@ impl HuffmanTranslator {
     }
 }
 
-impl From<&[SymbolCodeLength]> for HuffmanTranslator {
-    fn from(code_lengths: &[SymbolCodeLength]) -> Self {
-        Self::validate_input_code_lengths(code_lengths);
+impl <'a, T> From<T> for HuffmanTranslator 
+    where
+        T: IntoIterator<Item = &'a SymbolCodeLength, IntoIter = Iter<'a, SymbolCodeLength>>,
+{
+    fn from(code_lengths: T) -> Self {
+        let code_length_iterator = code_lengths.into_iter();
+        Self::validate_input_code_lengths(code_length_iterator.clone().as_slice());
         let mut encoder = HuffmanTranslator {
             code_word_lookup_table: [const { None }; Symbol::MAX as usize],
         };
-        encoder.fill_lookup_table(code_lengths);
+        encoder.fill_lookup_table(code_length_iterator);
         encoder
     }
 }
@@ -143,10 +154,7 @@ pub struct HuffmanWriter<'a, T: Write> {
 
 impl<'a, T: Write> HuffmanWriter<'a, T> {
     pub fn new(translator: &'a HuffmanTranslator, writer: &'a mut BitWriter<'a, T>) -> Self {
-        Self {
-            translator,
-            writer,
-        }
+        Self { translator, writer }
     }
 }
 
@@ -190,7 +198,7 @@ mod test {
     #[should_panic]
     fn test_max_code_length_too_long() {
         let symbols = [(0, 17), (1, 5), (2, 4), (3, 3)].map(SymbolCodeLength::from);
-        let _ = HuffmanTranslator::from(symbols.as_slice());
+        let _ = HuffmanTranslator::from(&symbols);
     }
 
     const TEST_SYMBOL_SEQUENCE: &[u8] = &[
@@ -218,7 +226,7 @@ mod test {
         let mut generator = LengthLimitedHuffmanCodeGenerator::new(length);
         let mut code_lengths = generator.generate_with_symbols(sorted_frequencies);
         code_lengths[0].length += 1;
-        HuffmanTranslator::from(code_lengths.as_slice())
+        HuffmanTranslator::from(&code_lengths)
     }
 
     #[test]
