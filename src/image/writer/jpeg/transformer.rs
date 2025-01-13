@@ -1,16 +1,13 @@
 use categorize::CategorizedBlock;
 use frequency_block::FrequencyBlock;
 use quantizer::Quantizer;
+use symbol_counting::HuffmanCount;
 use threadpool::ThreadPool;
 
 use super::{Image, JpegTransformationOptions, OutputImage};
 use crate::{
     color::YCbCrColorFormat,
     cosine_transform::{arai::AraiDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer},
-    huffman::{
-        code::HuffmanCodeGenerator, length_limited::LengthLimitedHuffmanCodeGenerator,
-        SymbolCodeLength, SymbolFrequency,
-    },
     image::{
         subsampling::{Subsampler, SubsamplingConfig, SubsamplingMethod},
         ColorChannel,
@@ -18,14 +15,15 @@ use crate::{
     Result,
 };
 
-mod categorize;
+pub mod categorize;
 mod frequency_block;
 mod quantizer;
+mod symbol_counting;
 
-struct CombinedColorChannels<T> {
-    luma: T,
-    chroma_red: T,
-    chroma_blue: T,
+pub struct CombinedColorChannels<T> {
+    pub luma: T,
+    pub chroma_red: T,
+    pub chroma_blue: T,
 }
 
 type SeparateColorChannels<T> = CombinedColorChannels<ColorChannel<T>>;
@@ -169,13 +167,6 @@ impl<'a> Transformer<'a> {
         }
     }
 
-    fn generate_code_lengths(symfreqs: &[SymbolFrequency]) -> Vec<SymbolCodeLength> {
-        let mut generator = LengthLimitedHuffmanCodeGenerator::new(15);
-        let mut symlens = generator.generate_with_symbols(symfreqs);
-        symlens[0].length += 1;
-        symlens
-    }
-
     pub fn transform(&self) -> Result<OutputImage> {
         let color_dots = self.convert_color_format();
         let color_channels = self.split_into_color_channels(color_dots);
@@ -184,25 +175,25 @@ impl<'a> Transformer<'a> {
         let quantized_channels = self.quantize_all_channels(&color_channels);
         let categorized_channels = self.categorize_all_channels(quantized_channels);
 
-        // count symfreqs for huffman code generation
+        let luma_huffman_symbol_counts = HuffmanCount::from(&categorized_channels.luma);
 
-        #[rustfmt::skip]
-        let mut ac_dummy = [(1, 14), (2, 30), (3, 4), (4, 7), (5, 9), (6, 4), (7, 42), (8, 1),
-            (9, 14), (10, 5), (11, 14), (12, 30), (13, 4), (14, 7), (15, 9), (16, 4), (17, 42),
-            (18, 1), (19, 14), (20, 5), (21, 14), (22, 30), (23, 4), (24, 7), (25, 9), (26, 4),
-            (27, 42), (28, 1), (29, 14), (30, 12), (31, 32), (32, 1)]
-            .map(SymbolFrequency::from);
-        ac_dummy.sort_by_key(|f| f.frequency);
+        let chroma_huffman_symbol_counts = HuffmanCount::from_iter(
+            categorized_channels
+                .chroma_blue
+                .iter()
+                .chain(categorized_channels.chroma_red.iter()),
+        );
 
         Ok(OutputImage {
             width: self.image.width,
             height: self.image.height,
             chroma_subsampling_preset: self.options.chroma_subsampling_preset,
             bits_per_channel: self.options.bits_per_channel,
-            luma_ac_huffman: Self::generate_code_lengths(&ac_dummy),
-            luma_dc_huffman: Self::generate_code_lengths(&ac_dummy),
-            chroma_ac_huffman: Self::generate_code_lengths(&ac_dummy),
-            chroma_dc_huffman: Self::generate_code_lengths(&ac_dummy),
+            luma_ac_huffman: luma_huffman_symbol_counts.generate_ac_huffman_code(),
+            luma_dc_huffman: luma_huffman_symbol_counts.generate_dc_huffman_code(),
+            chroma_ac_huffman: chroma_huffman_symbol_counts.generate_ac_huffman_code(),
+            chroma_dc_huffman: chroma_huffman_symbol_counts.generate_dc_huffman_code(),
+            blockwise_image_data: categorized_channels,
         })
     }
 }

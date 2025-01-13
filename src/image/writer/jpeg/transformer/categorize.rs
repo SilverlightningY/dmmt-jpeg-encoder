@@ -2,8 +2,8 @@ use super::frequency_block::FrequencyBlock;
 
 #[derive(Clone, Copy)]
 pub struct CategoryEncodedInteger {
-    pattern_length: u8,
-    pattern: u16,
+    pub pattern_length: u8,
+    pub pattern: u16,
 }
 
 impl CategoryEncodedInteger {
@@ -61,7 +61,7 @@ pub struct LeadingZerosToken {
 }
 
 impl LeadingZerosToken {
-    fn new(zeros_before: u8, symbol: i16) -> Self {
+    pub fn new(zeros_before: u8, symbol: i16) -> Self {
         Self {
             // numbers of zeros before symbol
             zeros_before,
@@ -81,8 +81,25 @@ impl LeadingZerosToken {
 }
 
 pub struct CategorizedBlock {
-    pub dc_category: CategoryEncodedInteger,
-    pub ac_tokens: Vec<LeadingZerosToken>,
+    dc_category: CategoryEncodedInteger,
+    ac_tokens: Vec<LeadingZerosToken>,
+}
+
+impl CategorizedBlock {
+    pub fn new(dc_category: CategoryEncodedInteger, ac_tokens: Vec<LeadingZerosToken>) -> Self {
+        Self {
+            dc_category,
+            ac_tokens,
+        }
+    }
+
+    pub fn iter_ac_symbols<'a>(&'a self) -> impl Iterator<Item = u8> + use<'a> {
+        self.ac_tokens.iter().map(|t| t.combined_symbol())
+    }
+
+    pub fn dc_symbol(&self) -> u8 {
+        self.dc_category.pattern_length
+    }
 }
 
 fn sum_zeros_before_values<'a, T: Iterator<Item = &'a i16>>(sequence: T) -> Vec<LeadingZerosToken> {
