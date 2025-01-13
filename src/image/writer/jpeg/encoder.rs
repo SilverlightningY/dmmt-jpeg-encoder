@@ -226,7 +226,12 @@ impl<'a, T: Write> Encoder<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{huffman::SymbolCodeLength, image::{subsampling::ChromaSubsamplingPreset, writer::jpeg::transformer::CombinedColorChannels}};
+    use crate::{
+        huffman::SymbolCodeLength,
+        image::{
+            subsampling::ChromaSubsamplingPreset, writer::jpeg::transformer::CombinedColorChannels,
+        },
+    };
 
     use super::{super::OutputImage, Encoder, TableKind};
 
@@ -239,11 +244,11 @@ mod tests {
         luma_dc_huffman: Vec::new(),
         chroma_ac_huffman: Vec::new(),
         chroma_dc_huffman: Vec::new(),
-	blockwise_image_data: CombinedColorChannels {
-	    luma: Vec::new(),
-	    chroma_red: Vec::new(),
-	    chroma_blue: Vec::new()
-	}
+        blockwise_image_data: CombinedColorChannels {
+            luma: Vec::new(),
+            chroma_red: Vec::new(),
+            chroma_blue: Vec::new(),
+        },
     };
 
     #[test]
