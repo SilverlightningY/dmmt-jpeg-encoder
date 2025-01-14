@@ -1,8 +1,5 @@
 use crate::{binary_stream::BitWriter, BitPattern};
-use std::{
-    io::{self, Write},
-    slice::Iter,
-};
+use std::io::{self, Write};
 
 use super::{Symbol, SymbolCodeLength};
 
@@ -37,29 +34,61 @@ pub struct HuffmanTranslator {
 }
 
 impl<'a> HuffmanTranslator {
-    fn fill_lookup_table(&mut self, code_lengths: Iter<'a, SymbolCodeLength>)
+    fn fill_lookup_table<T>(&mut self, code_lengths: &T)
+    where
+        T: DoubleEndedIterator<Item = &'a SymbolCodeLength> + Clone,
     {
-        self.insert_initial_code_word(code_lengths.clone());
+        self.insert_initial_code_word(code_lengths);
         self.insert_following_code_words(code_lengths);
     }
 
-    fn insert_initial_code_word(&mut self, code_lengths: Iter<'a, SymbolCodeLength>) {
-        let last_code_length: &SymbolCodeLength =
-            code_lengths.last().expect("code_lengths must not be empty");
+    fn insert_initial_code_word<T>(&mut self, code_lengths: &T)
+    where
+        T: DoubleEndedIterator<Item = &'a SymbolCodeLength> + Clone,
+    {
+        let last_code_length: &SymbolCodeLength = code_lengths
+            .clone()
+            .last()
+            .expect("code_lengths must not be empty");
         let code_word = Self::create_initial_code_word(last_code_length);
         self.set_code_word_for_symbol(last_code_length.symbol, code_word);
     }
 
-    fn insert_following_code_words(&mut self, code_lengths: Iter<'a, SymbolCodeLength>) {
+    fn insert_following_code_words<T>(&mut self, code_lengths: &T)
+    where
+        T: DoubleEndedIterator<Item = &'a SymbolCodeLength> + Clone,
+    {
         let rev_iterator = code_lengths.clone().rev();
-        for (current, previous) in code_lengths
-            .rev()
-            .skip(1)
-            .zip(rev_iterator)
-        {
+        for (current, previous) in code_lengths.clone().rev().skip(1).zip(rev_iterator) {
             self.ensure_symbol_was_not_inserted_before(current.symbol);
             let code_word = self.create_code_word(current.length, previous.symbol);
             self.set_code_word_for_symbol(current.symbol, code_word);
+        }
+    }
+
+    fn validate_input_code_lengths<T>(code_lengths: &T)
+    where
+        T: DoubleEndedIterator<Item = &'a SymbolCodeLength> + Clone,
+    {
+        let length = code_lengths.clone().count();
+        if length == 0 {
+            panic!("the set of input symbols must not be empty");
+        }
+
+        if length > Symbol::MAX as usize {
+            panic!("can't encode more than {} different symbols", Symbol::MAX);
+        }
+
+        if !code_lengths.clone().rev().is_sorted_by_key(|s| s.length) {
+            panic!("symbols-array needs to be sorted by descending code word length");
+        }
+
+        let first_length = code_lengths.clone().next().unwrap().length;
+        if first_length as u32 > CodeBitPattern::BITS {
+            panic!(
+                "maximum code word length allowed in input is {} bits",
+                CodeBitPattern::BITS
+            );
         }
     }
 }
@@ -109,40 +138,20 @@ impl HuffmanTranslator {
     fn symbol_exists(&self, symbol: Symbol) -> bool {
         self.code_word_lookup_table[symbol as usize].is_some()
     }
-
-    fn validate_input_code_lengths(code_lengths: &[SymbolCodeLength]) {
-        if code_lengths.is_empty() {
-            panic!("the set of input symbols must not be empty");
-        }
-
-        if code_lengths.len() > Symbol::MAX as usize {
-            panic!("can't encode more than {} different symbols", Symbol::MAX);
-        }
-
-        if !code_lengths.iter().rev().is_sorted_by_key(|s| s.length) {
-            panic!("symbols-array needs to be sorted by descending code word length");
-        }
-
-        if code_lengths[0].length as u32 > CodeBitPattern::BITS {
-            panic!(
-                "maximum code word length allowed in input is {} bits",
-                CodeBitPattern::BITS
-            );
-        }
-    }
 }
 
-impl <'a, T> From<T> for HuffmanTranslator 
-    where
-        T: IntoIterator<Item = &'a SymbolCodeLength, IntoIter = Iter<'a, SymbolCodeLength>>,
+impl<'a, T, I> From<T> for HuffmanTranslator
+where
+    T: IntoIterator<Item = &'a SymbolCodeLength, IntoIter = I>,
+    I: DoubleEndedIterator<Item = &'a SymbolCodeLength> + Clone,
 {
     fn from(code_lengths: T) -> Self {
         let code_lengths_iterator = code_lengths.into_iter();
-        Self::validate_input_code_lengths(code_lengths_iterator.clone().as_slice());
+        Self::validate_input_code_lengths(&code_lengths_iterator);
         let mut encoder = HuffmanTranslator {
             code_word_lookup_table: [const { None }; Symbol::MAX as usize],
         };
-        encoder.fill_lookup_table(code_lengths_iterator);
+        encoder.fill_lookup_table(&code_lengths_iterator);
         encoder
     }
 }

@@ -176,7 +176,6 @@ impl<'a> Transformer<'a> {
         let categorized_channels = self.categorize_all_channels(quantized_channels);
 
         let luma_huffman_symbol_counts = HuffmanCount::from(&categorized_channels.luma);
-
         let chroma_huffman_symbol_counts = HuffmanCount::from_iter(
             categorized_channels
                 .chroma_blue

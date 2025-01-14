@@ -10,7 +10,7 @@ impl<'a, T: Write> SegmentMarkerInjector<'a, T> {
     }
 }
 
-impl<'a, T: Write> Write for SegmentMarkerInjector<'a, T> {
+impl<T: Write> Write for SegmentMarkerInjector<'_, T> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let mut bytes_written = 0;
         for &b in buf {
