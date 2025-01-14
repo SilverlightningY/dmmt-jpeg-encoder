@@ -1,6 +1,7 @@
 use std::io::Write;
 
 mod encoder;
+mod segment_marker_injector;
 mod transformer;
 
 use encoder::Encoder;
@@ -72,5 +73,5 @@ struct OutputImage {
     luma_dc_huffman: Vec<SymbolCodeLength>,
     chroma_ac_huffman: Vec<SymbolCodeLength>,
     chroma_dc_huffman: Vec<SymbolCodeLength>,
-    blockwise_image_data: CombinedColorChannels<Vec<CategorizedBlock>>
+    blockwise_image_data: CombinedColorChannels<Vec<CategorizedBlock>>,
 }

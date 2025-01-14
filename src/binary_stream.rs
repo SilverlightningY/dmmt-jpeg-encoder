@@ -1,7 +1,6 @@
 use std::io;
 use std::io::Write;
 
-/// State for writing individual bits to a Writer
 pub struct BitWriter<'a, T: Write> {
     /// the underlying output stream
     writer: &'a mut T,
