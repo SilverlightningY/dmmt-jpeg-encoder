@@ -14,8 +14,7 @@ pub enum Error {
     FailedToWriteHuffmanTables,
     FailedToWriteEndOfFile,
     FailedToWriteJfifApplicationHeader,
-    FailedToWriteLuminanceQuantizationTable,
-    FailedToWriteChrominanceQuantizationTable,
+    FailedToWriteQuantizationTable,
     FailedToWriteStartOfFrame,
     FailedToWriteStartOfScan,
     FailedToWriteImageData,
@@ -81,11 +80,8 @@ impl Display for Error {
             Error::FailedToWriteJfifApplicationHeader => {
                 write!(f, "Failed to write JFIF application header")
             }
-            Error::FailedToWriteLuminanceQuantizationTable => {
-                write!(f, "Failed to write luminance quantization table")
-            }
-            Error::FailedToWriteChrominanceQuantizationTable => {
-                write!(f, "Failed to write chrominance quantization table")
+            Error::FailedToWriteQuantizationTable => {
+                write!(f, "Failed to write quantization table")
             }
             Error::FailedToWriteStartOfFrame => write!(f, "Failed to write start of frame segment"),
             Error::FailedToWriteStartOfScan => write!(f, "Failed to write start of scan segment"),

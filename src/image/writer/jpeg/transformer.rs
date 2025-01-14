@@ -16,8 +16,8 @@ use crate::{
 };
 
 pub mod categorize;
-mod frequency_block;
-mod quantizer;
+pub mod frequency_block;
+pub mod quantizer;
 mod symbol_counting;
 
 pub struct CombinedColorChannels<T> {
