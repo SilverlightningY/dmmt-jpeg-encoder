@@ -3,6 +3,7 @@ use crate::image::{
     writer::jpeg::transformer::{categorize::CategorizedBlock, CombinedColorChannels},
 };
 
+#[derive(Clone, Copy)]
 enum Movement {
     Up,
     Right,
@@ -27,17 +28,28 @@ impl<'a> BlockFoldIterator<'a> {
     pub fn new(
         channels: &'a CombinedColorChannels<Vec<CategorizedBlock>>,
         subsampling_preset: ChromaSubsamplingPreset,
+        image_width: usize,
     ) -> Self {
         let index = 0;
         match subsampling_preset {
-            ChromaSubsamplingPreset::P444 => Self {
+            ChromaSubsamplingPreset::P444 | ChromaSubsamplingPreset::P422 => Self {
                 luma_iterator: Box::new(channels.luma.iter()),
                 chroma_blue_iterator: Box::new(channels.chroma_blue.iter()),
                 chroma_red_iterator: Box::new(channels.chroma_red.iter()),
                 subsampling_preset,
                 index,
             },
-            _ => todo!("Not implemented"),
+            ChromaSubsamplingPreset::P420 => Self {
+                luma_iterator: Box::new(ChannelIterator::new(
+                    image_width,
+                    &channels.luma,
+                    IterationSchema::create_420_luma_schema(),
+                )),
+                chroma_blue_iterator: Box::new(channels.chroma_blue.iter()),
+                chroma_red_iterator: Box::new(channels.chroma_red.iter()),
+                subsampling_preset,
+                index,
+            },
         }
     }
 
@@ -114,18 +126,104 @@ impl<'a> Iterator for BlockFoldIterator<'a> {
     }
 }
 
-trait IterationSchema: Iterator<Item = Movement> {
-    fn row_stepwidth() -> usize;
-}
-
 struct ChannelIterator<'a, I> {
+    image_width: usize,
     channel: &'a [CategorizedBlock],
     iteration_schema: I,
+    index: usize,
 }
 
-// impl<'a, I> ChannelIterator<'a>
-// where
-//     I: Iterator<Item = Movement>,
-// {
-//     fn new() {}
-// }
+impl<'a, I> ChannelIterator<'a, I>
+where
+    I: Iterator<Item = Box<dyn Iterator<Item = Movement>>>,
+{
+    fn new(image_width: usize, channel: &'a [CategorizedBlock], iteration_schema: I) -> Self {
+        Self {
+            image_width,
+            channel,
+            iteration_schema,
+            index: 0,
+        }
+    }
+
+    fn step_down(&mut self) {
+        self.index += self.image_width;
+    }
+
+    fn step_right(&mut self) {
+        self.index += 1;
+    }
+
+    fn step_up(&mut self) {
+        self.index -= self.image_width;
+    }
+
+    fn step_left(&mut self) {
+        self.index -= 1;
+    }
+
+    fn apply_movement(&mut self, movement: Movement) {
+        match movement {
+            Movement::Left => self.step_left(),
+            Movement::Down => self.step_down(),
+            Movement::Right => self.step_right(),
+            Movement::Up => self.step_up(),
+        }
+    }
+
+    fn move_to_next_position(&mut self) {
+        let next_movements = self.iteration_schema.next();
+        for movement in next_movements.expect("Movements iterator must not end") {
+            self.apply_movement(movement);
+        }
+    }
+
+    fn is_out_of_range(&self) -> bool {
+        self.index >= self.channel.len()
+    }
+}
+
+impl<'a, T> Iterator for ChannelIterator<'a, T>
+where
+    T: Iterator<Item = Box<dyn Iterator<Item = Movement>>>,
+{
+    type Item = &'a CategorizedBlock;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.is_out_of_range() {
+            return None;
+        }
+        let return_value = &self.channel[self.index];
+        self.move_to_next_position();
+        Some(return_value)
+    }
+}
+
+struct IterationSchema {
+    index: usize,
+    moves: Vec<Vec<Movement>>,
+}
+
+impl IterationSchema {
+    fn create_420_luma_schema() -> Self {
+        Self {
+            index: 0,
+            moves: vec![
+                vec![Movement::Right],
+                vec![Movement::Down, Movement::Left],
+                vec![Movement::Right],
+                vec![Movement::Up, Movement::Right],
+            ],
+        }
+    }
+}
+
+impl Iterator for IterationSchema {
+    type Item = Box<dyn Iterator<Item = Movement>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let return_value = Box::new(self.moves[self.index].clone().into_iter());
+        self.index = (self.index + 1) % self.moves.len();
+        Some(return_value)
+    }
+}

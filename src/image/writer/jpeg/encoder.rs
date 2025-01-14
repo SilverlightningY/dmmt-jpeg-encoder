@@ -25,7 +25,6 @@ const HUFFMAN_TABLE_MARKER: [u8; 2] = [0xFF, 0xC4];
 const QUANTIZATION_TABLE_MARKER: [u8; 2] = [0xFF, 0xDB];
 const START_OF_FRAME_MARKER: [u8; 2] = [0xFF, 0xC0];
 const START_OF_SCAN_MARKER: [u8; 2] = [0xFF, 0xDA];
-const EXIF_APPLICATION_MARKER: [u8; 2] = [0xFF, 0xE1];
 const JFIF_APPLICATION_MARKER: [u8; 2] = [0xFF, 0xE0];
 
 enum ControlMarker {
@@ -36,7 +35,6 @@ enum ControlMarker {
 enum SegmentMarker {
     HuffmanTable,
     QuantizationTable,
-    ExifApplication,
     JfifApplication,
     StartOfFrame,
     StartOfScan,
@@ -60,7 +58,6 @@ impl AsBinaryRef for SegmentMarker {
         match self {
             Self::HuffmanTable => &HUFFMAN_TABLE_MARKER,
             Self::QuantizationTable => &QUANTIZATION_TABLE_MARKER,
-            Self::ExifApplication => &EXIF_APPLICATION_MARKER,
             Self::JfifApplication => &JFIF_APPLICATION_MARKER,
             Self::StartOfFrame => &START_OF_FRAME_MARKER,
             Self::StartOfScan => &START_OF_SCAN_MARKER,
@@ -73,7 +70,6 @@ impl Display for SegmentMarker {
         match self {
             Self::HuffmanTable => write!(f, "Huffman Table"),
             Self::QuantizationTable => write!(f, "Quantization Table"),
-            Self::ExifApplication => write!(f, "Exif Application"),
             Self::JfifApplication => write!(f, "Jfif Application"),
             Self::StartOfFrame => write!(f, "Start of Frame"),
             Self::StartOfScan => write!(f, "Start of Scan"),
@@ -134,7 +130,7 @@ impl<'a, T: Write> Encoder<'a, T> {
         self.write_all_quantization_tables()?;
         self.write_start_of_frame()?;
         self.write_all_huffman_tables()?;
-        // self.write_start_of_scan()?;
+        self.write_start_of_scan()?;
         self.write_image_data()?;
         self.write_end_of_file()?;
         Ok(())
@@ -270,6 +266,7 @@ impl<'a, T: Write> Encoder<'a, T> {
         let block_fold_iterator = BlockFoldIterator::new(
             &self.image.blockwise_image_data,
             self.image.chroma_subsampling_preset,
+            self.image.width as usize,
         );
         for (color_info, block) in block_fold_iterator {
             match color_info {
