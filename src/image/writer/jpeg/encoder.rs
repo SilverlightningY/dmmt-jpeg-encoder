@@ -234,7 +234,12 @@ impl<'a, T: Write> Encoder<'a, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{huffman::SymbolCodeLength, image::{subsampling::ChromaSubsamplingPreset, writer::jpeg::transformer::CombinedColorChannels}};
+    use crate::{
+        huffman::SymbolCodeLength,
+        image::{
+            subsampling::ChromaSubsamplingPreset, writer::jpeg::transformer::CombinedColorChannels,
+        },
+    };
 
     use super::{super::OutputImage, Encoder, TableKind};
 
@@ -247,11 +252,11 @@ mod tests {
         luma_dc_huffman: Vec::new(),
         chroma_ac_huffman: Vec::new(),
         chroma_dc_huffman: Vec::new(),
-	blockwise_image_data: CombinedColorChannels {
-	    luma: Vec::new(),
-	    chroma_red: Vec::new(),
-	    chroma_blue: Vec::new()
-	}
+        blockwise_image_data: CombinedColorChannels {
+            luma: Vec::new(),
+            chroma_red: Vec::new(),
+            chroma_blue: Vec::new(),
+        },
     };
 
     #[test]
@@ -323,6 +328,24 @@ mod tests {
                 0x03,
                 ratio,
                 0x01,
+            ]
+        )
+    }
+
+    #[test]
+    fn test_write_quantization() {
+        let mut output = Vec::new();
+        let image = &OUTPUT_IMAGE;
+        let mut encoder = Encoder::new(&mut output, image);
+        encoder.write_quantization_table(2).unwrap();
+
+        assert_eq!(
+            output,
+            [
+                0xFF, 0xDB, 0x00, 0x44, 0x00, 0x02, 16, 11, 12, 14, 12, 10, 16, 14, 13, 14, 18, 17,
+                16, 19, 24, 40, 26, 24, 22, 22, 24, 49, 35, 37, 29, 40, 58, 51, 61, 60, 57, 51, 56,
+                55, 64, 72, 92, 78, 64, 68, 87, 69, 55, 56, 80, 109, 81, 87, 95, 98, 103, 104, 103,
+                62, 77, 113, 121, 112, 100, 120, 92, 101, 103, 99
             ]
         )
     }
