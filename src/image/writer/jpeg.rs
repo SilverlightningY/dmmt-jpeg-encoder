@@ -1,6 +1,7 @@
 use std::io::Write;
 
 mod encoder;
+mod segment_marker_injector;
 mod transformer;
 
 use encoder::Encoder;

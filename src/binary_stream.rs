@@ -3,7 +3,6 @@ use std::io::Write;
 
 use crate::BitPattern;
 
-/// State for writing individual bits to a Writer
 pub struct BitWriter<'a, T: Write> {
     /// the underlying output stream
     writer: &'a mut T,
