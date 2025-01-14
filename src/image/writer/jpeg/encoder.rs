@@ -196,7 +196,6 @@ impl<'a, T: Write> Encoder<'a, T> {
 
     fn write_quantization_table(&mut self, number: u8) -> Result<()> {
         let mut header: Vec<u8> = Vec::new();
-        header.push(0);
         header.push(number);
 
         FrequencyBlock::new(QUANTIZATION_TABLE)
@@ -226,16 +225,17 @@ impl<'a, T: Write> Encoder<'a, T> {
         let width_bytes = self.image.width.to_be_bytes();
         let height_bytes = self.image.height.to_be_bytes();
         let subsampling = self.image.chroma_subsampling_preset;
-        let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (2 / subsampling.vertical_rate());
+        // broken ratio
+        let ratio = (subsampling.horizontal_rate() << 4) | (subsampling.vertical_rate());
         #[rustfmt::skip]
         let content = &[
             self.image.bits_per_channel,                   // bits per pixel
             height_bytes[0], height_bytes[1], // image height
             width_bytes[0], width_bytes[1],   // image width
             0x03,                   // components (1 or 3)
-            0x01, 0x42, 0x00,       // 0x01=y component, sampling factor, quant. table
-            0x02, ratio, 0x01,       // 0x02=Cb component, ...
-            0x03, ratio, 0x01,       // 0x03=Cr component, ...
+            0x01, 0x11, 0x00,       // 0x01=y component, sampling factor, quant. table
+            0x02, 0x11, 0x01,       // 0x02=Cb component, ...
+            0x03, 0x11, 0x01,       // 0x03=Cr component, ...
         ];
         self.write_segment(SegmentMarker::StartOfFrame, content)
             .map_err(|_| Error::FailedToWriteStartOfFrame)
@@ -245,11 +245,11 @@ impl<'a, T: Write> Encoder<'a, T> {
         let data = [
             0x03, // number of components (1=mono, 3=colour)
             0x01,
-            0b0001_0000, // 0x01=Y, 0x00=Huffman tables to use 0..3 ac, 0..3 dc (1 and 0)
+            0b0000_0001, // 0x01=Y, 0x00=Huffman tables to use 0..3 dc, 0..3 ac (1 and 0)
             0x02,
-            0b0011_0010, // 0x02=Cb, 0x11=Huffman tables to use 0..3 ac, 0..3 dc (3 and 2)
+            0b0010_0011, // 0x02=Cb, 0x11=Huffman tables to use 0..3 dc, 0..3 ac (3 and 2)
             0x03,
-            0b0011_0010, // 0x03=Cr, 0x11=Huffman table to use 0..3 ac, 0..3 dc (3 and 2)
+            0b0010_0011, // 0x03=Cr, 0x11=Huffman table to use 0..3 dc, 0..3 ac (3 and 2)
             // I never figured out the actual meaning of these next 3 bytes
             0x00, // start of spectral selection or predictor selection
             0x3F, // end of spectral selection
@@ -274,6 +274,7 @@ impl<'a, T: Write> Encoder<'a, T> {
                 ColorInformation::Chroma => self.write_chroma_block(&mut bit_writer, block)?,
             }
         }
+        bit_writer.flush().expect("Error flushing");
         self.writer
             .write_all(&buffer)
             .map_err(|_| Error::FailedToWriteBlock)
