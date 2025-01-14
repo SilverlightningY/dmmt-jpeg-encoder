@@ -6,6 +6,8 @@ use std::fmt::Display;
 use std::io;
 use std::io::Write;
 
+use super::transformer::frequency_block::FrequencyBlock;
+use super::transformer::quantizer::QUANTIZATION_TABLE;
 use super::OutputImage;
 use crate::logger;
 
@@ -106,8 +108,7 @@ impl<'a, T: Write> Encoder<'a, T> {
     pub fn encode(&mut self) -> Result<()> {
         self.write_start_of_file()?;
         self.write_jfif_application_header()?;
-        // self.write_luminance_quantization_table()?;
-        // self.write_chrominance_quantization_table()?;
+        self.write_all_quantization_tables()?;
         self.write_start_of_frame()?;
         self.write_all_huffman_tables()?;
         // self.write_start_of_scan()?;
@@ -169,6 +170,23 @@ impl<'a, T: Write> Encoder<'a, T> {
         self.write_huffman_table(TableKind::ChromaDC, &self.image.chroma_dc_huffman)
     }
 
+    fn write_all_quantization_tables(&mut self) -> Result<()> {
+        self.write_quantization_table(0)?;
+        self.write_quantization_table(1)
+    }
+
+    fn write_quantization_table(&mut self, number: u8) -> Result<()> {
+        let mut header: Vec<u8> = Vec::new();
+        header.push(0);
+        header.push(number);
+
+        FrequencyBlock::new(QUANTIZATION_TABLE)
+            .iter_zig_zag()
+            .for_each(|f| header.push(*f));
+        self.write_segment(SegmentMarker::QuantizationTable, &header)
+            .map_err(|_| Error::FailedToWriteQuantizationTable)
+    }
+
     fn write_jfif_application_header(&mut self) -> Result<()> {
         // let width_bytes = image.width.to_be_bytes();
         // let height_bytes = image.height.to_be_bytes();
@@ -207,9 +225,12 @@ impl<'a, T: Write> Encoder<'a, T> {
     fn write_start_of_scan(&mut self) -> Result<()> {
         let data = [
             0x03, // number of components (1=mono, 3=colour)
-            0x01, 0x00, // 0x01=Y, 0x00=Huffman table to use
-            0x02, 0x11, // 0x02=Cb, 0x11=Huffman table to use
-            0x03, 0x11, // 0x03=Cr, 0x11=Huffman table to use
+            0x01,
+            0b0001_0000, // 0x01=Y, 0x00=Huffman tables to use 0..3 ac, 0..3 dc (1 and 0)
+            0x02,
+            0b0011_0010, // 0x02=Cb, 0x11=Huffman tables to use 0..3 ac, 0..3 dc (3 and 2)
+            0x03,
+            0b0011_0010, // 0x03=Cr, 0x11=Huffman table to use 0..3 ac, 0..3 dc (3 and 2)
             // I never figured out the actual meaning of these next 3 bytes
             0x00, // start of spectral selection or predictor selection
             0x3F, // end of spectral selection
@@ -324,6 +345,24 @@ mod tests {
         )
     }
     #[test]
+    fn test_write_quantization() {
+        let mut output = Vec::new();
+        let image = &OUTPUT_IMAGE;
+        let mut encoder = Encoder::new(&mut output, image);
+        encoder.write_quantization_table(2).unwrap();
+
+        assert_eq!(
+            output,
+            [
+                0xFF, 0xDB, 0x00, 0x44, 0x00, 0x02, 16, 11, 12, 14, 12, 10, 16, 14, 13, 14, 18, 17,
+                16, 19, 24, 40, 26, 24, 22, 22, 24, 49, 35, 37, 29, 40, 58, 51, 61, 60, 57, 51, 56,
+                55, 64, 72, 92, 78, 64, 68, 87, 69, 55, 56, 80, 109, 81, 87, 95, 98, 103, 104, 103,
+                62, 77, 113, 121, 112, 100, 120, 92, 101, 103, 99
+            ]
+        )
+    }
+
+    #[test]
     fn test_write_start_of_scan() {
         let mut output = Vec::new();
         let image = &OUTPUT_IMAGE;
@@ -332,7 +371,7 @@ mod tests {
 
         assert_eq!(
             output,
-            [0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3F, 0x00,]
+            [0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x10, 0x02, 0x32, 0x03, 0x32, 0x00, 0x3F, 0x00,]
         )
     }
 }
