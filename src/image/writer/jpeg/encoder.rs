@@ -225,9 +225,12 @@ impl<'a, T: Write> Encoder<'a, T> {
     fn write_start_of_scan(&mut self) -> Result<()> {
         let data = [
             0x03, // number of components (1=mono, 3=colour)
-            0x01, 0x00, // 0x01=Y, 0x00=Huffman table to use
-            0x02, 0x11, // 0x02=Cb, 0x11=Huffman table to use
-            0x03, 0x11, // 0x03=Cr, 0x11=Huffman table to use
+            0x01,
+            0b0001_0000, // 0x01=Y, 0x00=Huffman tables to use 0..3 ac, 0..3 dc (1 and 0)
+            0x02,
+            0b0011_0010, // 0x02=Cb, 0x11=Huffman tables to use 0..3 ac, 0..3 dc (3 and 2)
+            0x03,
+            0b0011_0010, // 0x03=Cr, 0x11=Huffman table to use 0..3 ac, 0..3 dc (3 and 2)
             // I never figured out the actual meaning of these next 3 bytes
             0x00, // start of spectral selection or predictor selection
             0x3F, // end of spectral selection
@@ -356,6 +359,8 @@ mod tests {
                 55, 64, 72, 92, 78, 64, 68, 87, 69, 55, 56, 80, 109, 81, 87, 95, 98, 103, 104, 103,
                 62, 77, 113, 121, 112, 100, 120, 92, 101, 103, 99
             ]
+        )
+    }
 
     #[test]
     fn test_write_start_of_scan() {
