@@ -93,8 +93,8 @@ impl LeadingZerosToken {
         left_part | right_part
     }
 
-    pub fn category(&self) -> CategoryEncodedInteger {
-        self.category
+    pub fn category(&self) -> &CategoryEncodedInteger {
+        &self.category
     }
 }
 
@@ -118,6 +118,14 @@ impl CategorizedBlock {
 
     pub fn dc_symbol(&self) -> u8 {
         self.dc_category.pattern_length
+    }
+
+    pub fn dc_category(&self) -> &CategoryEncodedInteger {
+        &self.dc_category
+    }
+
+    pub fn iter_ac_categories(&self) -> impl Iterator<Item = &CategoryEncodedInteger> + use<'_> {
+        self.ac_tokens.iter().map(|t| t.category())
     }
 }
 

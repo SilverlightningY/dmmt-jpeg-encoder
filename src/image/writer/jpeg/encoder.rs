@@ -1,13 +1,21 @@
+use block_fold_iterator::{BlockFoldIterator, ColorInformation};
+
+use crate::binary_stream::BitWriter;
 use crate::error::Error;
+use crate::huffman::encoder::HuffmanTranslator;
 use crate::huffman::{Symbol, SymbolCodeLength};
-use crate::Result;
+use crate::{BitPattern, Result};
 use core::panic;
 use std::fmt::Display;
 use std::io;
 use std::io::Write;
 
+use super::segment_marker_injector::SegmentMarkerInjector;
+use super::transformer::categorize::CategorizedBlock;
 use super::OutputImage;
 use crate::logger;
+
+mod block_fold_iterator;
 
 const START_OF_FILE_MARKER: [u8; 2] = [0xFF, 0xD8];
 const END_OF_FILE_MARKER: [u8; 2] = [0xFF, 0xD9];
@@ -96,11 +104,26 @@ fn create_huffman_lenght_header(code_lengths: &[SymbolCodeLength]) -> [u8; 16] {
 pub struct Encoder<'a, T> {
     writer: &'a mut T,
     image: &'a OutputImage,
+    luma_ac_huffman_translator: HuffmanTranslator,
+    luma_dc_huffman_translator: HuffmanTranslator,
+    chroma_ac_huffman_translator: HuffmanTranslator,
+    chroma_dc_huffman_translator: HuffmanTranslator,
 }
 
 impl<'a, T: Write> Encoder<'a, T> {
     pub fn new(writer: &'a mut T, image: &'a OutputImage) -> Encoder<'a, T> {
-        Encoder { writer, image }
+        let luma_ac_huffman_translator = HuffmanTranslator::from(&image.luma_ac_huffman);
+        let luma_dc_huffman_translator = HuffmanTranslator::from(&image.luma_dc_huffman);
+        let chroma_ac_huffman_translator = HuffmanTranslator::from(&image.chroma_ac_huffman);
+        let chroma_dc_huffman_translator = HuffmanTranslator::from(&image.chroma_dc_huffman);
+        Encoder {
+            writer,
+            image,
+            luma_ac_huffman_translator,
+            luma_dc_huffman_translator,
+            chroma_ac_huffman_translator,
+            chroma_dc_huffman_translator,
+        }
     }
 
     pub fn encode(&mut self) -> Result<()> {
@@ -111,7 +134,7 @@ impl<'a, T: Write> Encoder<'a, T> {
         self.write_start_of_frame()?;
         self.write_all_huffman_tables()?;
         // self.write_start_of_scan()?;
-        // self.write_image_data()?;
+        self.write_image_data()?;
         self.write_end_of_file()?;
         Ok(())
     }
@@ -220,7 +243,144 @@ impl<'a, T: Write> Encoder<'a, T> {
     }
 
     fn write_image_data(&mut self) -> Result<()> {
-        todo!("implement write image data");
+        let mut buffer: Vec<u8> = Vec::new();
+        let mut segment_marker_injector = SegmentMarkerInjector::new(&mut buffer);
+        let mut bit_writer = BitWriter::new(&mut segment_marker_injector, true);
+        let block_fold_iterator = BlockFoldIterator::new(
+            &self.image.blockwise_image_data,
+            self.image.chroma_subsampling_preset,
+        );
+        for (color_info, block) in block_fold_iterator {
+            match color_info {
+                ColorInformation::Luma => self.write_luma_block(&mut bit_writer, block)?,
+                ColorInformation::Chroma => self.write_chroma_block(&mut bit_writer, block)?,
+            }
+        }
+        self.writer
+            .write_all(&buffer)
+            .map_err(|_| Error::FailedToWriteBlock)
+    }
+
+    fn write_luma_block<W: Write>(
+        &self,
+        bit_writer: &mut BitWriter<'_, W>,
+        block: &CategorizedBlock,
+    ) -> Result<()> {
+        self.write_luma_dc_from_block(bit_writer, block)?;
+        self.write_luma_ac_from_block(bit_writer, block)?;
+        Ok(())
+    }
+
+    fn write_chroma_block<W: Write>(
+        &self,
+        bit_writer: &mut BitWriter<'_, W>,
+        block: &CategorizedBlock,
+    ) -> Result<()> {
+        self.write_chroma_dc_from_block(bit_writer, block)?;
+        self.write_chroma_ac_from_block(bit_writer, block)?;
+        Ok(())
+    }
+
+    fn write_luma_dc_from_block<W: Write>(
+        &self,
+        bit_writer: &mut BitWriter<'_, W>,
+        block: &CategorizedBlock,
+    ) -> Result<()> {
+        Self::write_dc_from_block(
+            bit_writer,
+            block,
+            &self.luma_dc_huffman_translator,
+            "luma dc",
+        )
+    }
+
+    fn write_chroma_dc_from_block<W: Write>(
+        &self,
+        bit_writer: &mut BitWriter<'_, W>,
+        block: &CategorizedBlock,
+    ) -> Result<()> {
+        Self::write_dc_from_block(
+            bit_writer,
+            block,
+            &self.chroma_dc_huffman_translator,
+            "chroma dc",
+        )
+    }
+
+    fn write_luma_ac_from_block<W: Write>(
+        &self,
+        bit_writer: &mut BitWriter<'_, W>,
+        block: &CategorizedBlock,
+    ) -> Result<()> {
+        Self::write_ac_from_block(
+            bit_writer,
+            block,
+            &self.luma_ac_huffman_translator,
+            "luma ac",
+        )
+    }
+
+    fn write_chroma_ac_from_block<W: Write>(
+        &self,
+        bit_writer: &mut BitWriter<'_, W>,
+        block: &CategorizedBlock,
+    ) -> Result<()> {
+        Self::write_ac_from_block(
+            bit_writer,
+            block,
+            &self.chroma_ac_huffman_translator,
+            "chroma ac",
+        )
+    }
+
+    fn write_dc_from_block<W: Write>(
+        bit_writer: &mut BitWriter<'_, W>,
+        block: &CategorizedBlock,
+        huffman_tranlator: &HuffmanTranslator,
+        component_name: &'static str,
+    ) -> Result<()> {
+        let symbol = block.dc_symbol();
+        let symbol = huffman_tranlator
+            .get_code_word_for_symbol(symbol)
+            .as_ref()
+            .ok_or(Error::HuffmanSymbolNotPresentInTranslator(
+                symbol,
+                component_name,
+            ))?;
+        let category = block.dc_category();
+        Self::write_symbol_and_category(bit_writer, symbol, category)
+            .map_err(|_| Error::FailedToWriteBlock)?;
+        Ok(())
+    }
+
+    fn write_symbol_and_category<W: Write>(
+        bit_writer: &mut BitWriter<'_, W>,
+        symbol: &impl BitPattern,
+        category: &impl BitPattern,
+    ) -> io::Result<()> {
+        bit_writer.write_bit_pattern(symbol)?;
+        bit_writer.write_bit_pattern(category)?;
+        Ok(())
+    }
+
+    fn write_ac_from_block<W: Write>(
+        bit_writer: &mut BitWriter<'_, W>,
+        block: &CategorizedBlock,
+        huffman_tranlator: &HuffmanTranslator,
+        component_name: &'static str,
+    ) -> Result<()> {
+        for (symbol, category) in block.iter_ac_symbols().zip(block.iter_ac_categories()) {
+            let symbol = huffman_tranlator
+                .get_code_word_for_symbol(symbol)
+                .as_ref()
+                .ok_or(Error::HuffmanSymbolNotPresentInTranslator(
+                    symbol,
+                    component_name,
+                ))?;
+            Self::write_symbol_and_category(bit_writer, symbol, category)
+                .map_err(|_| Error::FailedToWriteBlock)?;
+        }
+        Ok(())
     }
 }
 

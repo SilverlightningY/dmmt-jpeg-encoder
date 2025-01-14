@@ -1,6 +1,6 @@
 use std::io::Write;
 
-struct SegmentMarkerInjector<'a, T: Write> {
+pub struct SegmentMarkerInjector<'a, T: Write> {
     writer: &'a mut T,
 }
 
