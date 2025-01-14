@@ -223,7 +223,17 @@ impl<'a, T: Write> Encoder<'a, T> {
     }
 
     fn write_start_of_scan(&mut self) -> Result<()> {
-        self.write_segment(SegmentMarker::StartOfScan, &[])
+        let data = [
+            0x03, // number of components (1=mono, 3=colour)
+            0x01, 0x00, // 0x01=Y, 0x00=Huffman table to use
+            0x02, 0x11, // 0x02=Cb, 0x11=Huffman table to use
+            0x03, 0x11, // 0x03=Cr, 0x11=Huffman table to use
+            // I never figured out the actual meaning of these next 3 bytes
+            0x00, // start of spectral selection or predictor selection
+            0x3F, // end of spectral selection
+            0x00, // successive approximation bit position or point transform
+        ];
+        self.write_segment(SegmentMarker::StartOfScan, &data)
             .map_err(|_| Error::FailedToWriteStartOfScan)
     }
 
@@ -331,7 +341,6 @@ mod tests {
             ]
         )
     }
-
     #[test]
     fn test_write_quantization() {
         let mut output = Vec::new();
@@ -347,6 +356,17 @@ mod tests {
                 55, 64, 72, 92, 78, 64, 68, 87, 69, 55, 56, 80, 109, 81, 87, 95, 98, 103, 104, 103,
                 62, 77, 113, 121, 112, 100, 120, 92, 101, 103, 99
             ]
+
+    #[test]
+    fn test_write_start_of_scan() {
+        let mut output = Vec::new();
+        let image = &OUTPUT_IMAGE;
+        let mut encoder = Encoder::new(&mut output, image);
+        encoder.write_start_of_scan().unwrap();
+
+        assert_eq!(
+            output,
+            [0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3F, 0x00,]
         )
     }
 }

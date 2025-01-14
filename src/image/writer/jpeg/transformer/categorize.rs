@@ -8,9 +8,6 @@ pub struct CategoryEncodedInteger {
 
 impl CategoryEncodedInteger {
     fn get_category_of(value: i16) -> u8 {
-        if value == 0 {
-            return 0;
-        }
         let absolute_value = value.unsigned_abs();
         let category = i16::BITS - absolute_value.leading_zeros();
         if category > 15 {
@@ -23,34 +20,43 @@ impl CategoryEncodedInteger {
     }
 
     fn calculate_pattern_of(value: i16, category: u8) -> u16 {
-        if value == 0 {
-            return 0;
-        }
         if value.is_positive() {
-            value.unsigned_abs()
+            value as u16
         } else {
-            let category_border_marker = 1 << (category - 1);
-            2 * category_border_marker - 1 - value.unsigned_abs()
+            let category_border_marker = 1 << category;
+            category_border_marker - 1 - value.unsigned_abs()
         }
     }
 
     fn left_align_pattern(pattern: u16, category: u8) -> u16 {
-        if category == 0 {
-            return 0;
-        }
-        let free_bits_in_pattern = u16::BITS as u8 - category;
-        pattern << free_bits_in_pattern
+        let leading_free_bits = u16::BITS as u8 - category;
+        pattern << leading_free_bits
     }
-}
 
-impl From<i16> for CategoryEncodedInteger {
-    fn from(value: i16) -> Self {
+    fn zero() -> Self {
+        CategoryEncodedInteger {
+            pattern_length: 0,
+            pattern: 0,
+        }
+    }
+
+    fn from_non_zero_value(value: i16) -> Self {
         let category = Self::get_category_of(value);
         let pattern = Self::calculate_pattern_of(value, category);
         let pattern = Self::left_align_pattern(pattern, category);
         CategoryEncodedInteger {
             pattern_length: category,
             pattern,
+        }
+    }
+}
+
+impl From<i16> for CategoryEncodedInteger {
+    fn from(value: i16) -> Self {
+        if value == 0 {
+            Self::zero()
+        } else {
+            Self::from_non_zero_value(value)
         }
     }
 }
