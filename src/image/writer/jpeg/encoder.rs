@@ -221,38 +221,11 @@ impl<'a, T: Write> Encoder<'a, T> {
             .map_err(|_| Error::FailedToWriteJfifApplicationHeader)
     }
 
-    fn gcd(&mut self, a: u8, b: u8) -> u8 {
-        let mut a = a;
-        let mut b = b;
-        while b != 0 {
-            let temp = b;
-            b = a % b;
-            a = temp;
-        }
-        a
-    }
-
-    fn get_ratios(&mut self, h_default: u8, v_default: u8, h_rate: u8, v_rate: u8) -> (u8, u8) {
-        let h_ratio = h_default / h_rate;
-        let v_ratio = v_default / v_rate;
-        let tmp = self.gcd(h_default, h_ratio);
-        let gcd = self.gcd(tmp, v_ratio);
-
-        let ratio_luma = (h_default / gcd) << 4 | v_default / gcd;
-        let ratio_chroma = (h_ratio / gcd) << 4 | v_ratio / gcd;
-        (ratio_luma, ratio_chroma)
-    }
-
     fn write_start_of_frame(&mut self) -> Result<()> {
         let width_bytes = self.image.width.to_be_bytes();
         let height_bytes = self.image.height.to_be_bytes();
         let subsampling = self.image.chroma_subsampling_preset;
-        let (ratio_luma, ratio_chroma) = self.get_ratios(
-            4,
-            4,
-            subsampling.horizontal_rate(),
-            subsampling.vertical_rate(),
-        );
+        let ratio = (subsampling.horizontal_rate()) << 4 | subsampling.vertical_rate();
 
         #[rustfmt::skip]
         let content = &[
@@ -260,11 +233,10 @@ impl<'a, T: Write> Encoder<'a, T> {
             height_bytes[0], height_bytes[1], // image height
             width_bytes[0], width_bytes[1],   // image width
             0x03,                    // components (1 or 3)
-            0x01, ratio_luma, 0x00,         // 0x01=y component, sampling factor, quant. table
-            0x02, ratio_chroma, 0x01,       // 0x02=Cb component, ...
-            0x03, ratio_chroma, 0x01,       // 0x03=Cr component, ...
+            0x01, ratio, 0x00,         // 0x01=y component, sampling factor, quant. table
+            0x02, 0x11, 0x01,       // 0x02=Cb component, ...
+            0x03, 0x11, 0x01,       // 0x03=Cr component, ...
             ];
-        println!("{}, {}", ratio_luma, ratio_chroma);
         self.write_segment(SegmentMarker::StartOfFrame, content)
             .map_err(|_| Error::FailedToWriteStartOfFrame)
     }
@@ -434,7 +406,7 @@ impl<'a, T: Write> Encoder<'a, T> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        huffman::{Symbol, SymbolCodeLength, SymbolFrequency},
+        huffman::SymbolCodeLength,
         image::{
             subsampling::ChromaSubsamplingPreset, writer::jpeg::transformer::CombinedColorChannels,
         },
@@ -506,12 +478,6 @@ mod tests {
 
         let width_bytes = (image.width).to_be_bytes();
         let height_bytes = (image.height).to_be_bytes();
-        let (luma_ratio, chroma_ratio) = encoder.get_ratios(
-            4,
-            4,
-            image.chroma_subsampling_preset.horizontal_rate(),
-            image.chroma_subsampling_preset.vertical_rate(),
-        );
         assert_eq!(
             output,
             [
@@ -526,13 +492,13 @@ mod tests {
                 width_bytes[1],
                 0x03,
                 0x01,
-                luma_ratio,
+                0x11,
                 0x00,
                 0x02,
-                chroma_ratio,
+                0x11,
                 0x01,
                 0x03,
-                chroma_ratio,
+                0x11,
                 0x01,
             ]
         )
@@ -570,28 +536,28 @@ mod tests {
 
     #[test]
     fn test_ratios_p444() {
-        let mut output = Vec::new();
-        let image = create_dummy_image();
-        let mut encoder = Encoder::new(&mut output, &image);
-        let ratios = encoder.get_ratios(4, 4, 1, 1);
-        assert_eq!(ratios, (0x11, 0x11))
+        let subsampling = ChromaSubsamplingPreset::P444;
+        assert_eq!(
+            (subsampling.horizontal_rate()) << 4 | subsampling.vertical_rate(),
+            0x11
+        )
     }
 
     #[test]
     fn test_ratios_p422() {
-        let mut output = Vec::new();
-        let image = create_dummy_image();
-        let mut encoder = Encoder::new(&mut output, &image);
-        let ratios = encoder.get_ratios(4, 4, 2, 2);
-        assert_eq!(ratios, (0x22, 0x11))
+        let subsampling = ChromaSubsamplingPreset::P422;
+        assert_eq!(
+            (subsampling.horizontal_rate()) << 4 | subsampling.vertical_rate(),
+            0x21
+        )
     }
 
     #[test]
     fn test_ratios_p420() {
-        let mut output = Vec::new();
-        let image = create_dummy_image();
-        let mut encoder = Encoder::new(&mut output, &image);
-        let ratios = encoder.get_ratios(4, 4, 4, 4);
-        assert_eq!(ratios, (0x44, 0x11))
+        let subsampling = ChromaSubsamplingPreset::P420;
+        assert_eq!(
+            (subsampling.horizontal_rate()) << 4 | subsampling.vertical_rate(),
+            0x22
+        )
     }
 }
