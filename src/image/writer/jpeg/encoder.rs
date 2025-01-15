@@ -221,22 +221,50 @@ impl<'a, T: Write> Encoder<'a, T> {
             .map_err(|_| Error::FailedToWriteJfifApplicationHeader)
     }
 
+    fn gcd(&mut self, a: u8, b: u8) -> u8 {
+        let mut a = a;
+        let mut b = b;
+        while b != 0 {
+            let temp = b;
+            b = a % b;
+            a = temp;
+        }
+        a
+    }
+
+    fn get_ratios(&mut self, h_default: u8, v_default: u8, h_rate: u8, v_rate: u8) -> (u8, u8) {
+        let h_ratio = h_default / h_rate;
+        let v_ratio = v_default / v_rate;
+        let tmp = self.gcd(h_default, h_ratio);
+        let gcd = self.gcd(tmp, v_ratio);
+
+        let ratio_luma = (h_default / gcd) << 4 | v_default / gcd;
+        let ratio_chroma = (h_ratio / gcd) << 4 | v_ratio / gcd;
+        (ratio_luma, ratio_chroma)
+    }
+
     fn write_start_of_frame(&mut self) -> Result<()> {
         let width_bytes = self.image.width.to_be_bytes();
         let height_bytes = self.image.height.to_be_bytes();
         let subsampling = self.image.chroma_subsampling_preset;
-        // broken ratio
-        let ratio = (subsampling.horizontal_rate() << 4) | (subsampling.vertical_rate());
+        let (ratio_luma, ratio_chroma) = self.get_ratios(
+            4,
+            4,
+            subsampling.horizontal_rate(),
+            subsampling.vertical_rate(),
+        );
+
         #[rustfmt::skip]
         let content = &[
             self.image.bits_per_channel,                   // bits per pixel
             height_bytes[0], height_bytes[1], // image height
             width_bytes[0], width_bytes[1],   // image width
-            0x03,                   // components (1 or 3)
-            0x01, 0x11, 0x00,       // 0x01=y component, sampling factor, quant. table
-            0x02, 0x11, 0x01,       // 0x02=Cb component, ...
-            0x03, 0x11, 0x01,       // 0x03=Cr component, ...
-        ];
+            0x03,                    // components (1 or 3)
+            0x01, ratio_luma, 0x00,         // 0x01=y component, sampling factor, quant. table
+            0x02, ratio_chroma, 0x01,       // 0x02=Cb component, ...
+            0x03, ratio_chroma, 0x01,       // 0x03=Cr component, ...
+            ];
+        println!("{}, {}", ratio_luma, ratio_chroma);
         self.write_segment(SegmentMarker::StartOfFrame, content)
             .map_err(|_| Error::FailedToWriteStartOfFrame)
     }
@@ -406,7 +434,7 @@ impl<'a, T: Write> Encoder<'a, T> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        huffman::SymbolCodeLength,
+        huffman::{Symbol, SymbolCodeLength, SymbolFrequency},
         image::{
             subsampling::ChromaSubsamplingPreset, writer::jpeg::transformer::CombinedColorChannels,
         },
@@ -414,27 +442,30 @@ mod tests {
 
     use super::{super::OutputImage, Encoder, TableKind};
 
-    const OUTPUT_IMAGE: OutputImage = OutputImage {
-        width: 3,
-        height: 2,
-        chroma_subsampling_preset: ChromaSubsamplingPreset::P444,
-        bits_per_channel: 8,
-        luma_ac_huffman: Vec::new(),
-        luma_dc_huffman: Vec::new(),
-        chroma_ac_huffman: Vec::new(),
-        chroma_dc_huffman: Vec::new(),
-        blockwise_image_data: CombinedColorChannels {
-            luma: Vec::new(),
-            chroma_red: Vec::new(),
-            chroma_blue: Vec::new(),
-        },
-    };
+    fn create_dummy_image() -> OutputImage {
+        let dummy_huffman = [SymbolCodeLength::new(1, 14)].to_vec();
+        OutputImage {
+            width: 3,
+            height: 2,
+            chroma_subsampling_preset: ChromaSubsamplingPreset::P444,
+            bits_per_channel: 8,
+            luma_ac_huffman: dummy_huffman.clone(),
+            luma_dc_huffman: dummy_huffman.clone(),
+            chroma_ac_huffman: dummy_huffman.clone(),
+            chroma_dc_huffman: dummy_huffman.clone(),
+            blockwise_image_data: CombinedColorChannels {
+                luma: Vec::new(),
+                chroma_red: Vec::new(),
+                chroma_blue: Vec::new(),
+            },
+        }
+    }
 
     #[test]
     fn test_write_jfif() {
         let mut output = Vec::new();
-        let image = &OUTPUT_IMAGE;
-        let mut encoder = Encoder::new(&mut output, image);
+        let image = create_dummy_image();
+        let mut encoder = Encoder::new(&mut output, &image);
         encoder.write_jfif_application_header().unwrap();
         assert_eq!(
             output,
@@ -448,8 +479,8 @@ mod tests {
     #[test]
     fn test_write_huffman_header() {
         let mut output = Vec::new();
-        let image = &OUTPUT_IMAGE;
-        let mut encoder = Encoder::new(&mut output, image);
+        let image = create_dummy_image();
+        let mut encoder = Encoder::new(&mut output, &image);
         let symdepths =
             [(3, 2), (4, 2), (8, 4), (2, 4), (5, 4), (1, 4)].map(SymbolCodeLength::from);
 
@@ -469,14 +500,18 @@ mod tests {
     #[test]
     fn test_write_start_of_frame() {
         let mut output = Vec::new();
-        let image = &OUTPUT_IMAGE;
-        let mut encoder = Encoder::new(&mut output, image);
+        let image = create_dummy_image();
+        let mut encoder = Encoder::new(&mut output, &image);
         encoder.write_start_of_frame().unwrap();
 
-        let width_bytes = (OUTPUT_IMAGE.width).to_be_bytes();
-        let height_bytes = (OUTPUT_IMAGE.height).to_be_bytes();
-        let subsampling = ChromaSubsamplingPreset::P444;
-        let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (2 / subsampling.vertical_rate());
+        let width_bytes = (image.width).to_be_bytes();
+        let height_bytes = (image.height).to_be_bytes();
+        let (luma_ratio, chroma_ratio) = encoder.get_ratios(
+            4,
+            4,
+            image.chroma_subsampling_preset.horizontal_rate(),
+            image.chroma_subsampling_preset.vertical_rate(),
+        );
         assert_eq!(
             output,
             [
@@ -491,13 +526,13 @@ mod tests {
                 width_bytes[1],
                 0x03,
                 0x01,
-                0x42,
+                luma_ratio,
                 0x00,
                 0x02,
-                ratio,
+                chroma_ratio,
                 0x01,
                 0x03,
-                ratio,
+                chroma_ratio,
                 0x01,
             ]
         )
@@ -505,17 +540,17 @@ mod tests {
     #[test]
     fn test_write_quantization() {
         let mut output = Vec::new();
-        let image = &OUTPUT_IMAGE;
-        let mut encoder = Encoder::new(&mut output, image);
+        let image = create_dummy_image();
+        let mut encoder = Encoder::new(&mut output, &image);
         encoder.write_quantization_table(2).unwrap();
 
         assert_eq!(
             output,
             [
-                0xFF, 0xDB, 0x00, 0x44, 0x00, 0x02, 16, 11, 12, 14, 12, 10, 16, 14, 13, 14, 18, 17,
-                16, 19, 24, 40, 26, 24, 22, 22, 24, 49, 35, 37, 29, 40, 58, 51, 61, 60, 57, 51, 56,
-                55, 64, 72, 92, 78, 64, 68, 87, 69, 55, 56, 80, 109, 81, 87, 95, 98, 103, 104, 103,
-                62, 77, 113, 121, 112, 100, 120, 92, 101, 103, 99
+                0xFF, 0xDB, 0x00, 0x43, 0x02, 16, 11, 12, 14, 12, 10, 16, 14, 13, 14, 18, 17, 16,
+                19, 24, 40, 26, 24, 22, 22, 24, 49, 35, 37, 29, 40, 58, 51, 61, 60, 57, 51, 56, 55,
+                64, 72, 92, 78, 64, 68, 87, 69, 55, 56, 80, 109, 81, 87, 95, 98, 103, 104, 103, 62,
+                77, 113, 121, 112, 100, 120, 92, 101, 103, 99
             ]
         )
     }
@@ -523,13 +558,40 @@ mod tests {
     #[test]
     fn test_write_start_of_scan() {
         let mut output = Vec::new();
-        let image = &OUTPUT_IMAGE;
-        let mut encoder = Encoder::new(&mut output, image);
+        let image = create_dummy_image();
+        let mut encoder = Encoder::new(&mut output, &image);
         encoder.write_start_of_scan().unwrap();
 
         assert_eq!(
             output,
-            [0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x10, 0x02, 0x32, 0x03, 0x32, 0x00, 0x3F, 0x00,]
+            [0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x01, 0x02, 0x23, 0x03, 0x23, 0x00, 0x3F, 0x00,]
         )
+    }
+
+    #[test]
+    fn test_ratios_p444() {
+        let mut output = Vec::new();
+        let image = create_dummy_image();
+        let mut encoder = Encoder::new(&mut output, &image);
+        let ratios = encoder.get_ratios(4, 4, 1, 1);
+        assert_eq!(ratios, (0x11, 0x11))
+    }
+
+    #[test]
+    fn test_ratios_p422() {
+        let mut output = Vec::new();
+        let image = create_dummy_image();
+        let mut encoder = Encoder::new(&mut output, &image);
+        let ratios = encoder.get_ratios(4, 4, 2, 2);
+        assert_eq!(ratios, (0x22, 0x11))
+    }
+
+    #[test]
+    fn test_ratios_p420() {
+        let mut output = Vec::new();
+        let image = create_dummy_image();
+        let mut encoder = Encoder::new(&mut output, &image);
+        let ratios = encoder.get_ratios(4, 4, 4, 4);
+        assert_eq!(ratios, (0x44, 0x11))
     }
 }
