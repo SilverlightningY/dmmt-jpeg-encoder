@@ -15,10 +15,10 @@ use crate::{
     Result,
 };
 
+mod block_entangler;
 pub mod categorize;
 pub mod frequency_block;
 pub mod quantizer;
-mod block_entangler;
 mod symbol_counting;
 
 pub struct CombinedColorChannels<T> {
