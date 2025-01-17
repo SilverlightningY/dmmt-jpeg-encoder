@@ -1,3 +1,4 @@
+use block_entangler::entangle_channels;
 use categorize::CategorizedBlock;
 use frequency_block::FrequencyBlock;
 use quantizer::Quantizer;
@@ -174,7 +175,12 @@ impl<'a> Transformer<'a> {
         let mut color_channels = self.subsample_all_channels(&color_channels);
         self.apply_cosine_transform_on_all_channels_in_place(&mut color_channels);
         let quantized_channels = self.quantize_all_channels(&color_channels);
-        let categorized_channels = self.categorize_all_channels(quantized_channels);
+        let entangled_channels = entangle_channels(
+            quantized_channels,
+            (self.image.width / 16).into(),
+            self.options.chroma_subsampling_preset,
+        );
+        let categorized_channels = self.categorize_all_channels(entangled_channels);
 
         let luma_huffman_symbol_counts = HuffmanCount::from(&categorized_channels.luma);
 
