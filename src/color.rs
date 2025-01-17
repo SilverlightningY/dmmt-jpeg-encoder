@@ -1,6 +1,7 @@
 use core::panic;
 use std::fmt::Display;
 
+#[derive(Clone, Copy)]
 pub struct RGBColorFormat<T> {
     red: T,
     green: T,
@@ -18,6 +19,26 @@ pub struct YCbCrColorFormat<T> {
     pub luma: T,
     pub chroma_blue: T,
     pub chroma_red: T,
+}
+
+impl RGBColorFormat<f32> {
+    pub fn red() -> Self {
+        RGBColorFormat {
+            red: 1.0,
+            green: 0.0,
+            blue: 0.0,
+        }
+    }
+}
+
+impl Default for RGBColorFormat<f32> {
+    fn default() -> Self {
+        RGBColorFormat {
+            red: 0.0,
+            green: 0.0,
+            blue: 0.0,
+        }
+    }
 }
 
 impl From<&RangeColorFormat<u16>> for RGBColorFormat<f32> {
