@@ -1,6 +1,5 @@
 use std::{
     cmp,
-    collections::VecDeque,
     iter::Sum,
     ops::{AddAssign, Div, DivAssign},
 };
@@ -129,12 +128,16 @@ where
             row_index: 0,
         }
     }
+}
 
-    pub fn subsample_to_square_structure(&self, square_size: usize) -> Vec<T> {
+impl<'a, T> Subsampler<'a, T>
+where
+    T: Sized + Copy + AddAssign + DivAssign + Sum + From<u16> + Div + Div<Output = T> + Default,
+{
+    pub fn subsample_to_square_structure(&'a self, square_size: usize) -> Vec<T> {
         self.subsampling_iter()
-            .into_square_iter(square_size)
-            .flatten()
-            .collect()
+            .into_square_resorter(square_size)
+            .resort()
     }
 }
 
@@ -145,13 +148,22 @@ pub struct ChannelRowView<'a, T> {
     subsampler: &'a Subsampler<'a, T>,
 }
 
-impl<'a, T> ChannelRowView<'a, T> {
-    pub fn into_square_iter(self, square_size: usize) -> ChannelSquareIterator<'a, T> {
-        ChannelSquareIterator {
-            row_view: self,
-            square_buffer: VecDeque::new(),
+impl<'a, T> ChannelRowView<'a, T>
+where
+    T: Copy + Default,
+{
+    pub fn into_square_resorter(self, square_size: usize) -> ChannelSquareResorter<'a, T> {
+        let channel_width = self.subsampler.color_channel.width;
+        let channel_height = self.subsampler.color_channel.height;
+        let subsampled_width = channel_width / self.subsampling_config.horizontal_rate;
+        let subsampled_height = channel_height / self.subsampling_config.vertical_rate;
+        let number_of_items = subsampled_width as usize * subsampled_height as usize;
+        ChannelSquareResorter::new(
+            self,
             square_size,
-        }
+            number_of_items,
+            subsampled_width as usize,
+        )
     }
 }
 
@@ -223,104 +235,77 @@ where
     v.iter().copied().sum::<T>() / From::from(v.len() as _)
 }
 
-pub struct ChannelSquareIterator<'a, T> {
+pub struct ChannelSquareResorter<'a, T> {
     row_view: ChannelRowView<'a, T>,
-    square_buffer: VecDeque<Vec<T>>,
+    result_buffer: Vec<T>,
     square_size: usize,
+    square_length: usize,
+    number_of_items_per_block_row: usize,
 }
 
-impl<T> ChannelSquareIterator<'_, T>
+impl<'a, T> ChannelSquareResorter<'a, T>
+where
+    T: Copy + Default,
+{
+    fn new(
+        row_view: ChannelRowView<'a, T>,
+        square_size: usize,
+        number_of_items: usize,
+        row_length: usize,
+    ) -> Self {
+        let number_of_items_per_block_row = row_length * square_size;
+        Self {
+            row_view,
+            square_size,
+            result_buffer: vec![T::default(); number_of_items],
+            square_length: square_size * square_size,
+            number_of_items_per_block_row,
+        }
+    }
+}
+
+impl<T> ChannelSquareResorter<'_, T> {
+    fn calculate_item_index_for_square(
+        &mut self,
+        square_column_index: usize,
+        square_row_index: usize,
+        x: usize,
+        y: usize,
+    ) -> usize {
+        let first_column_index = square_column_index * self.square_length;
+        let first_row_index = square_row_index * self.number_of_items_per_block_row;
+        let row_start_index = y * self.square_size;
+        first_row_index + first_column_index + row_start_index + x
+    }
+}
+
+impl<T> ChannelSquareResorter<'_, T>
 where
     T: Sized + Copy + AddAssign + DivAssign + Sum + From<u16> + Div + Div<Output = T>,
 {
-    fn read_next_square_size_rows(&mut self) {
-        for _ in 0..self.square_size {
-            self.read_next_row();
-        }
-        self.pad_all_blocks_in_buffer();
+    pub fn resort(mut self) -> Vec<T> {
+        self.read_all_rows();
+        self.result_buffer
     }
 
-    fn read_next_row(&mut self) {
-        if let Some(row) = self.row_view.next() {
-            self.insert_row_into_square_buffers(row);
-            self.pad_row();
+    fn read_all_rows(&mut self) {
+        let mut row_index = 0;
+        while let Some(row) = self.row_view.next() {
+            self.insert_row_into_output_buffer(row_index, row);
+            row_index += 1;
         }
     }
 
-    fn insert_row_into_square_buffers(&mut self, row: impl Iterator<Item = T>) {
+    fn insert_row_into_output_buffer(&mut self, row_index: usize, row: impl Iterator<Item = T>) {
         for (index, value) in row.enumerate() {
-            let square_index = index / self.square_size;
-            self.fill_buffer_to_length(square_index + 1);
-            self.square_buffer[square_index].push(value);
+            let square_column_index = index / self.square_size;
+            let x = index % self.square_size;
+            let square_row_index = row_index / self.square_size;
+            let y = row_index % self.square_size;
+            let item_index =
+                self.calculate_item_index_for_square(square_column_index, square_row_index, x, y);
+            self.result_buffer[item_index] = value;
         }
-    }
-
-    fn pad_all_blocks_in_buffer(&mut self) {
-        for square in self.square_buffer.iter_mut() {
-            Self::pad_block(square, self.square_size);
-        }
-    }
-
-    fn fill_buffer_to_length(&mut self, length: usize) {
-        let old_length = self.square_buffer.len();
-        let difference = length.saturating_sub(old_length);
-        if difference == 0 {
-            return;
-        }
-        for _ in 0..difference {
-            self.square_buffer
-                .push_back(self.create_empty_square_buffer());
-        }
-    }
-
-    fn create_empty_square_buffer(&self) -> Vec<T> {
-        let capacity = self.square_size * self.square_size;
-        Vec::with_capacity(capacity)
-    }
-
-    fn pad_block(block: &mut Vec<T>, square_size: usize) {
-        let row_count = block.len() / square_size;
-        let number_of_rows_to_extend = square_size - row_count;
-        if number_of_rows_to_extend == 0 {
-            return;
-        }
-        let last_row_start_index = block.len() - square_size;
-        let last_row = &block[last_row_start_index..block.len()].to_owned();
-        for _ in 0..number_of_rows_to_extend {
-            block.extend(last_row);
-        }
-    }
-
-    fn pad_row(&mut self) {
-        let last_square = self
-            .square_buffer
-            .back_mut()
-            .expect("Square buffer must not be empty to pad row of last square");
-        let number_of_values_in_last_row = last_square.len() % self.square_size;
-        if number_of_values_in_last_row == 0 {
-            return;
-        }
-        let number_of_values_to_fill_up = self.square_size - number_of_values_in_last_row;
-        let last_value = *last_square
-            .last()
-            .expect("Last square in buffer must not be empty");
-        for _ in 0..number_of_values_to_fill_up {
-            last_square.push(last_value);
-        }
-    }
-}
-
-impl<T> Iterator for ChannelSquareIterator<'_, T>
-where
-    T: Sized + Copy + AddAssign + DivAssign + Sum + From<u16> + Div + Div<Output = T>,
-{
-    type Item = Vec<T>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.square_buffer.is_empty() {
-            self.read_next_square_size_rows();
-        }
-        self.square_buffer.pop_front()
     }
 }
 
@@ -336,7 +321,7 @@ mod test {
         13.0, 14.0, 15.0, 16.0,
     ];
 
-    const TEST_CHANNEL_TWO: &[f32] = &[
+    const TEST_CHANNEL_TWO: &[f32; 64] = &[
         1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
         17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0,
         32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0,
@@ -469,10 +454,7 @@ mod test {
             method: SubsamplingMethod::Skip,
         };
         let subsampler = Subsampler::new(&color_channel, &subsampling_config);
-        let mut block_iterator = subsampler.subsampling_iter().into_square_iter(4);
-        let block = block_iterator
-            .next()
-            .expect("Image should fit into one block");
+        let block = subsampler.subsample_to_square_structure(4);
         assert_eq!(block.len(), 16, "Block must have 4x4 fields");
         for (&actual, &expected) in block.iter().zip(TEST_CHANNEL_ONE) {
             assert_eq!(actual, expected, "Value does not match");
@@ -480,46 +462,7 @@ mod test {
     }
 
     #[test]
-    fn test_square_iter_with_single_and_too_small_image() {
-        let color_channel = ColorChannel {
-            dots: Vec::from(TEST_CHANNEL_ONE),
-            width: 4,
-            height: 4,
-        };
-        let subsampling_config = SubsamplingConfig {
-            horizontal_rate: 1,
-            vertical_rate: 1,
-            method: SubsamplingMethod::Skip,
-        };
-        let subsampler = Subsampler::new(&color_channel, &subsampling_config);
-        let square_size = 6;
-        let mut block_iterator = subsampler.subsampling_iter().into_square_iter(square_size);
-        let block = block_iterator
-            .next()
-            .expect("Image should fit into one block");
-        for ((index, &a), (&b, &c)) in block.iter().skip(3).step_by(square_size).enumerate().zip(
-            block
-                .iter()
-                .skip(4)
-                .step_by(square_size)
-                .zip(block.iter().skip(5).step_by(square_size)),
-        ) {
-            assert!(
-                a == b && b == c,
-                "Padding in row {} is not applied correctly",
-                index + 1
-            );
-        }
-        assert_eq!(
-            block.len(),
-            square_size * square_size,
-            "Block must have {0}x{0} fields",
-            square_size
-        );
-    }
-
-    #[test]
-    fn test_square_iter_with_large_image() {
+    fn test_square_resorter_with_1x1_subsampling() {
         let color_channel = ColorChannel {
             dots: Vec::from(TEST_CHANNEL_TWO),
             width: 8,
@@ -531,31 +474,54 @@ mod test {
             method: SubsamplingMethod::Skip,
         };
         let subsampler = Subsampler::new(&color_channel, &subsampling_config);
-        let square_size = 4;
-        let mut block_iterator = subsampler.subsampling_iter().into_square_iter(square_size);
-        let block = block_iterator
-            .nth(3)
-            .expect("Image should be cut into 4 squares");
-        let last_row_start_index = TEST_CHANNEL_TWO.len() - square_size;
-        let expected_last_row = &TEST_CHANNEL_TWO[last_row_start_index..TEST_CHANNEL_TWO.len()];
-        for (index, (&acutal, &expected)) in block
-            .iter()
-            .skip(square_size * (square_size - 1))
-            .zip(expected_last_row.iter())
-            .enumerate()
-        {
-            assert_eq!(acutal, expected, "Item at index {} does not match", index);
-        }
+        let resorted_channel = subsampler.subsample_to_square_structure(4);
+        let expected: &[f32; 64] = &[
+            1.0, 2.0, 3.0, 4.0, 9.0, 10.0, 11.0, 12.0, 17.0, 18.0, 19.0, 20.0, 25.0, 26.0, 27.0,
+            28.0, 5.0, 6.0, 7.0, 8.0, 13.0, 14.0, 15.0, 16.0, 21.0, 22.0, 23.0, 24.0, 29.0, 30.0,
+            31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 41.0, 42.0, 43.0, 44.0, 49.0, 50.0, 51.0, 52.0,
+            57.0, 58.0, 59.0, 60.0, 37.0, 38.0, 39.0, 40.0, 45.0, 46.0, 47.0, 48.0, 53.0, 54.0,
+            55.0, 56.0, 61.0, 62.0, 63.0, 64.0,
+        ];
         assert_eq!(
-            block.len(),
-            square_size * square_size,
-            "Block must have {0}x{0} fields",
-            square_size
+            resorted_channel.len(),
+            expected.len(),
+            "Length of resorted channel does not match"
         );
+        for (&actual, &expected) in resorted_channel.iter().zip(expected) {
+            assert_eq!(actual, expected, "Value does not match");
+        }
     }
 
     #[test]
-    fn test_square_iter_with_large_image_with_padding() {
+    fn test_square_resorter_with_2x2_subsampling() {
+        let color_channel = ColorChannel {
+            dots: Vec::from(TEST_CHANNEL_TWO),
+            width: 8,
+            height: 8,
+        };
+        let subsampling_config = SubsamplingConfig {
+            horizontal_rate: 2,
+            vertical_rate: 2,
+            method: SubsamplingMethod::Skip,
+        };
+        let subsampler = Subsampler::new(&color_channel, &subsampling_config);
+        let resorted_channel = subsampler.subsample_to_square_structure(4);
+        let expected: &[f32; 16] = &[
+            1.0, 3.0, 5.0, 7.0, 17.0, 19.0, 21.0, 23.0, 33.0, 35.0, 37.0, 39.0, 49.0, 51.0, 53.0,
+            55.0,
+        ];
+        assert_eq!(
+            resorted_channel.len(),
+            expected.len(),
+            "Length of resorted channel does not match"
+        );
+        for (&actual, &expected) in resorted_channel.iter().zip(expected) {
+            assert_eq!(actual, expected, "Value does not match");
+        }
+    }
+
+    #[test]
+    fn test_square_resorter_with_1x2_subsampling() {
         let color_channel = ColorChannel {
             dots: Vec::from(TEST_CHANNEL_TWO),
             width: 8,
@@ -563,31 +529,23 @@ mod test {
         };
         let subsampling_config = SubsamplingConfig {
             horizontal_rate: 1,
-            vertical_rate: 1,
+            vertical_rate: 2,
             method: SubsamplingMethod::Skip,
         };
         let subsampler = Subsampler::new(&color_channel, &subsampling_config);
-        let square_size = 7;
-        let mut block_iterator = subsampler.subsampling_iter().into_square_iter(square_size);
-        let block = block_iterator
-            .nth(3)
-            .expect("Image should be cut into 4 squares");
+        let resorted_channel = subsampler.subsample_to_square_structure(4);
+        let expected: &[f32; 32] = &[
+            1.0, 2.0, 3.0, 4.0, 17.0, 18.0, 19.0, 20.0, 33.0, 34.0, 35.0, 36.0, 49.0, 50.0, 51.0,
+            52.0, 5.0, 6.0, 7.0, 8.0, 21.0, 22.0, 23.0, 24.0, 37.0, 38.0, 39.0, 40.0, 53.0, 54.0,
+            55.0, 56.0,
+        ];
         assert_eq!(
-            block.len(),
-            square_size * square_size,
-            "Block must have {0}x{0} fields",
-            square_size
+            resorted_channel.len(),
+            expected.len(),
+            "Length of resorted channel does not match"
         );
-        let mut previous_value = block.last().unwrap().to_owned();
-        for (index, &value) in block.iter().enumerate() {
-            let x = index % square_size;
-            let y = index / square_size;
-            assert_eq!(
-                value, previous_value,
-                "Padded value does not match at x = {}, y = {}",
-                x, y
-            );
-            previous_value = value;
+        for (&actual, &expected) in resorted_channel.iter().zip(expected) {
+            assert_eq!(actual, expected, "Value does not match");
         }
     }
 }
