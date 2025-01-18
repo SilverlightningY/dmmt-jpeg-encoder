@@ -266,7 +266,6 @@ impl<'a, T: Write> Encoder<'a, T> {
         let block_fold_iterator = BlockFoldIterator::new(
             &self.image.blockwise_image_data,
             self.image.chroma_subsampling_preset,
-            self.image.width as usize,
         );
         for (color_info, block) in block_fold_iterator {
             match color_info {
