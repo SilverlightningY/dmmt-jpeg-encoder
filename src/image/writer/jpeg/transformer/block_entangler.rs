@@ -30,7 +30,7 @@ pub struct QuadFoldingIterator<U, T: Iterator<Item = U>> {
     two_line_buffer: Vec<U>,
     two_line_buffer_index: usize,
     line_length: usize,
-    two_line_buffer_length: usize
+    two_line_buffer_length: usize,
 }
 
 impl<U: Copy, T: Iterator<Item = U>> QuadFoldingIterator<U, T> {
@@ -40,7 +40,7 @@ impl<U: Copy, T: Iterator<Item = U>> QuadFoldingIterator<U, T> {
             two_line_buffer: Vec::with_capacity(line_length * 2),
             two_line_buffer_index: line_length * 2,
             line_length,
-	    two_line_buffer_length: line_length*2
+            two_line_buffer_length: line_length * 2,
         }
     }
 
@@ -54,7 +54,7 @@ impl<U: Copy, T: Iterator<Item = U>> QuadFoldingIterator<U, T> {
         let mut items_pushed = 0;
         // Ans: For loops move the iterator (implicit call to into_iter()), which is NOT what
         //      we want here, as only part of the iterator is consumed by early break
-        while let Some(item) = self.linear_backlog.next() {
+        for item in self.linear_backlog.by_ref() {
             self.two_line_buffer.push(item);
             items_pushed += 1;
             if items_pushed == self.two_line_buffer_length {
