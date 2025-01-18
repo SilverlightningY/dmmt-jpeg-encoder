@@ -354,11 +354,11 @@ impl<'a, T: Write> Encoder<'a, T> {
     fn write_dc_from_block<W: Write>(
         bit_writer: &mut BitWriter<'_, W>,
         block: &CategorizedBlock,
-        huffman_tranlator: &HuffmanTranslator,
+        huffman_translator: &HuffmanTranslator,
         component_name: &'static str,
     ) -> Result<()> {
         let symbol = block.dc_symbol();
-        let symbol = huffman_tranlator
+        let symbol = huffman_translator
             .get_code_word_for_symbol(symbol)
             .as_ref()
             .ok_or(Error::HuffmanSymbolNotPresentInTranslator(
@@ -413,27 +413,40 @@ mod tests {
 
     use super::{super::OutputImage, Encoder, TableKind};
 
-    const OUTPUT_IMAGE: OutputImage = OutputImage {
-        width: 3,
-        height: 2,
-        chroma_subsampling_preset: ChromaSubsamplingPreset::P444,
-        bits_per_channel: 8,
-        luma_ac_huffman: Vec::new(),
-        luma_dc_huffman: Vec::new(),
-        chroma_ac_huffman: Vec::new(),
-        chroma_dc_huffman: Vec::new(),
-        blockwise_image_data: CombinedColorChannels {
-            luma: Vec::new(),
-            chroma_red: Vec::new(),
-            chroma_blue: Vec::new(),
+    const HUFFMAN_CODES: &[SymbolCodeLength; 2] = &[
+        SymbolCodeLength {
+            symbol: 3,
+            length: 5,
         },
-    };
+        SymbolCodeLength {
+            symbol: 1,
+            length: 1,
+        },
+    ];
+
+    fn create_test_image() -> OutputImage {
+        OutputImage {
+            width: 3,
+            height: 2,
+            chroma_subsampling_preset: ChromaSubsamplingPreset::P444,
+            bits_per_channel: 8,
+            luma_ac_huffman: Vec::from(HUFFMAN_CODES),
+            luma_dc_huffman: Vec::from(HUFFMAN_CODES),
+            chroma_ac_huffman: Vec::from(HUFFMAN_CODES),
+            chroma_dc_huffman: Vec::from(HUFFMAN_CODES),
+            blockwise_image_data: CombinedColorChannels {
+                luma: Vec::new(),
+                chroma_red: Vec::new(),
+                chroma_blue: Vec::new(),
+            },
+        }
+    }
 
     #[test]
     fn test_write_jfif() {
         let mut output = Vec::new();
-        let image = &OUTPUT_IMAGE;
-        let mut encoder = Encoder::new(&mut output, image);
+        let image = create_test_image();
+        let mut encoder = Encoder::new(&mut output, &image);
         encoder.write_jfif_application_header().unwrap();
         assert_eq!(
             output,
@@ -447,8 +460,8 @@ mod tests {
     #[test]
     fn test_write_huffman_header() {
         let mut output = Vec::new();
-        let image = &OUTPUT_IMAGE;
-        let mut encoder = Encoder::new(&mut output, image);
+        let image = create_test_image();
+        let mut encoder = Encoder::new(&mut output, &image);
         let symdepths =
             [(3, 2), (4, 2), (8, 4), (2, 4), (5, 4), (1, 4)].map(SymbolCodeLength::from);
 
@@ -468,12 +481,12 @@ mod tests {
     #[test]
     fn test_write_start_of_frame() {
         let mut output = Vec::new();
-        let image = &OUTPUT_IMAGE;
-        let mut encoder = Encoder::new(&mut output, image);
+        let image = create_test_image();
+        let mut encoder = Encoder::new(&mut output, &image);
         encoder.write_start_of_frame().unwrap();
 
-        let width_bytes = (OUTPUT_IMAGE.width).to_be_bytes();
-        let height_bytes = (OUTPUT_IMAGE.height).to_be_bytes();
+        let width_bytes = (image.width).to_be_bytes();
+        let height_bytes = (image.height).to_be_bytes();
         let subsampling = ChromaSubsamplingPreset::P444;
         let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (2 / subsampling.vertical_rate());
         assert_eq!(
@@ -504,8 +517,8 @@ mod tests {
     #[test]
     fn test_write_quantization() {
         let mut output = Vec::new();
-        let image = &OUTPUT_IMAGE;
-        let mut encoder = Encoder::new(&mut output, image);
+        let image = create_test_image();
+        let mut encoder = Encoder::new(&mut output, &image);
         encoder.write_quantization_table(2).unwrap();
 
         assert_eq!(
@@ -522,8 +535,8 @@ mod tests {
     #[test]
     fn test_write_start_of_scan() {
         let mut output = Vec::new();
-        let image = &OUTPUT_IMAGE;
-        let mut encoder = Encoder::new(&mut output, image);
+        let image = create_test_image();
+        let mut encoder = Encoder::new(&mut output, &image);
         encoder.write_start_of_scan().unwrap();
 
         assert_eq!(
