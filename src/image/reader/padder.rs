@@ -16,7 +16,7 @@ impl PaddedImage {
             ((image.height + pad_nearest_height - 1) / pad_nearest_height) * pad_nearest_height;
 
         let black_pixel: RGBColorFormat<f32> = RGBColorFormat::default();
-        let mut dots = Vec::new();
+        let mut dots = Vec::with_capacity(padded_height as usize * padded_width as usize);
 
         let mut position = 0;
         for _ in 0..image.height {
@@ -44,6 +44,7 @@ impl PaddedImage {
     }
 }
 
+#[cfg(test)]
 mod test {
     use crate::{
         color::RGBColorFormat,

@@ -21,6 +21,7 @@ pub struct YCbCrColorFormat<T> {
     pub chroma_red: T,
 }
 
+#[cfg(test)]
 impl RGBColorFormat<f32> {
     pub fn red() -> Self {
         RGBColorFormat {
