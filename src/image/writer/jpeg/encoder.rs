@@ -196,7 +196,6 @@ impl<'a, T: Write> Encoder<'a, T> {
 
     fn write_quantization_table(&mut self, number: u8) -> Result<()> {
         let mut header: Vec<u8> = Vec::new();
-        header.push(0);
         header.push(number);
 
         FrequencyBlock::new(QUANTIZATION_TABLE)
@@ -226,17 +225,18 @@ impl<'a, T: Write> Encoder<'a, T> {
         let width_bytes = self.image.width.to_be_bytes();
         let height_bytes = self.image.height.to_be_bytes();
         let subsampling = self.image.chroma_subsampling_preset;
-        let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (2 / subsampling.vertical_rate());
+        let ratio = (subsampling.horizontal_rate()) << 4 | subsampling.vertical_rate();
+
         #[rustfmt::skip]
         let content = &[
             self.image.bits_per_channel,                   // bits per pixel
             height_bytes[0], height_bytes[1], // image height
             width_bytes[0], width_bytes[1],   // image width
-            0x03,                   // components (1 or 3)
-            0x01, 0x42, 0x00,       // 0x01=y component, sampling factor, quant. table
-            0x02, ratio, 0x01,       // 0x02=Cb component, ...
-            0x03, ratio, 0x01,       // 0x03=Cr component, ...
-        ];
+            0x03,                    // components (1 or 3)
+            0x01, ratio, 0x00,         // 0x01=y component, sampling factor, quant. table
+            0x02, 0x11, 0x01,       // 0x02=Cb component, ...
+            0x03, 0x11, 0x01,       // 0x03=Cr component, ...
+            ];
         self.write_segment(SegmentMarker::StartOfFrame, content)
             .map_err(|_| Error::FailedToWriteStartOfFrame)
     }
@@ -245,11 +245,11 @@ impl<'a, T: Write> Encoder<'a, T> {
         let data = [
             0x03, // number of components (1=mono, 3=colour)
             0x01,
-            0b0001_0000, // 0x01=Y, 0x00=Huffman tables to use 0..3 ac, 0..3 dc (1 and 0)
+            0b0000_0001, // 0x01=Y, 0x00=Huffman tables to use 0..3 dc, 0..3 ac (1 and 0)
             0x02,
-            0b0011_0010, // 0x02=Cb, 0x11=Huffman tables to use 0..3 ac, 0..3 dc (3 and 2)
+            0b0010_0011, // 0x02=Cb, 0x11=Huffman tables to use 0..3 dc, 0..3 ac (3 and 2)
             0x03,
-            0b0011_0010, // 0x03=Cr, 0x11=Huffman table to use 0..3 ac, 0..3 dc (3 and 2)
+            0b0010_0011, // 0x03=Cr, 0x11=Huffman table to use 0..3 dc, 0..3 ac (3 and 2)
             // I never figured out the actual meaning of these next 3 bytes
             0x00, // start of spectral selection or predictor selection
             0x3F, // end of spectral selection
@@ -274,6 +274,7 @@ impl<'a, T: Write> Encoder<'a, T> {
                 ColorInformation::Chroma => self.write_chroma_block(&mut bit_writer, block)?,
             }
         }
+        bit_writer.flush().expect("Error flushing");
         self.writer
             .write_all(&buffer)
             .map_err(|_| Error::FailedToWriteBlock)
@@ -487,8 +488,6 @@ mod tests {
 
         let width_bytes = (image.width).to_be_bytes();
         let height_bytes = (image.height).to_be_bytes();
-        let subsampling = ChromaSubsamplingPreset::P444;
-        let ratio = ((4 / subsampling.horizontal_rate()) << 4) | (2 / subsampling.vertical_rate());
         assert_eq!(
             output,
             [
@@ -503,13 +502,13 @@ mod tests {
                 width_bytes[1],
                 0x03,
                 0x01,
-                0x42,
+                0x11,
                 0x00,
                 0x02,
-                ratio,
+                0x11,
                 0x01,
                 0x03,
-                ratio,
+                0x11,
                 0x01,
             ]
         )
@@ -524,10 +523,10 @@ mod tests {
         assert_eq!(
             output,
             [
-                0xFF, 0xDB, 0x00, 0x44, 0x00, 0x02, 16, 11, 12, 14, 12, 10, 16, 14, 13, 14, 18, 17,
-                16, 19, 24, 40, 26, 24, 22, 22, 24, 49, 35, 37, 29, 40, 58, 51, 61, 60, 57, 51, 56,
-                55, 64, 72, 92, 78, 64, 68, 87, 69, 55, 56, 80, 109, 81, 87, 95, 98, 103, 104, 103,
-                62, 77, 113, 121, 112, 100, 120, 92, 101, 103, 99
+                0xFF, 0xDB, 0x00, 0x43, 0x02, 16, 11, 12, 14, 12, 10, 16, 14, 13, 14, 18, 17, 16,
+                19, 24, 40, 26, 24, 22, 22, 24, 49, 35, 37, 29, 40, 58, 51, 61, 60, 57, 51, 56, 55,
+                64, 72, 92, 78, 64, 68, 87, 69, 55, 56, 80, 109, 81, 87, 95, 98, 103, 104, 103, 62,
+                77, 113, 121, 112, 100, 120, 92, 101, 103, 99
             ]
         )
     }
@@ -541,7 +540,34 @@ mod tests {
 
         assert_eq!(
             output,
-            [0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x10, 0x02, 0x32, 0x03, 0x32, 0x00, 0x3F, 0x00,]
+            [0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x01, 0x02, 0x23, 0x03, 0x23, 0x00, 0x3F, 0x00,]
+        )
+    }
+
+    #[test]
+    fn test_ratios_p444() {
+        let subsampling = ChromaSubsamplingPreset::P444;
+        assert_eq!(
+            (subsampling.horizontal_rate()) << 4 | subsampling.vertical_rate(),
+            0x11
+        )
+    }
+
+    #[test]
+    fn test_ratios_p422() {
+        let subsampling = ChromaSubsamplingPreset::P422;
+        assert_eq!(
+            (subsampling.horizontal_rate()) << 4 | subsampling.vertical_rate(),
+            0x21
+        )
+    }
+
+    #[test]
+    fn test_ratios_p420() {
+        let subsampling = ChromaSubsamplingPreset::P420;
+        assert_eq!(
+            (subsampling.horizontal_rate()) << 4 | subsampling.vertical_rate(),
+            0x22
         )
     }
 }

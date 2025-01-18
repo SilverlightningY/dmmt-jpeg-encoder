@@ -6,7 +6,7 @@ pub mod tree;
 
 pub type Symbol = u8;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Copy, Clone)]
 pub struct SymbolCodeLength {
     pub symbol: Symbol,
     pub length: usize,
