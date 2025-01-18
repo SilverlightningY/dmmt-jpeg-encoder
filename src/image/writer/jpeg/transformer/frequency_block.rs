@@ -4,6 +4,7 @@ const ZIG_ZAG_ORDERED_BLOCK_INDEXES: [usize; 64] = [
     52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63,
 ];
 
+#[derive(Clone, Copy)]
 pub struct FrequencyBlock<T> {
     data: [T; 64],
 }
