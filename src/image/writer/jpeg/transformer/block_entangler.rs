@@ -8,7 +8,7 @@ pub fn entangle_channels<'a, U: Copy + 'a, T: Iterator<Item = U> + 'a>(
     subsampling_preset: ChromaSubsamplingPreset,
 ) -> CombinedColorChannels<Box<dyn Iterator<Item = U> + 'a>> {
     match subsampling_preset {
-        ChromaSubsamplingPreset::P444 | ChromaSubsamplingPreset::P422 => CombinedColorChannels {
+        ChromaSubsamplingPreset::P444 | ChromaSubsamplingPreset::P422 => Self {
             luma: Box::new(linear_blocks.luma),
             chroma_blue: Box::new(linear_blocks.chroma_blue),
             chroma_red: Box::new(linear_blocks.chroma_red),
