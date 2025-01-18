@@ -1,11 +1,11 @@
-use crate::binary_stream::BitWriter;
+use crate::{binary_stream::BitWriter, BitPattern};
 use std::io::{self, Write};
 
 use super::{Symbol, SymbolCodeLength};
 
 type CodeBitPattern = u16;
 
-struct CodeWord {
+pub struct CodeWord {
     bit_pattern: CodeBitPattern,
     length: usize,
 }
@@ -19,53 +19,81 @@ impl From<(CodeBitPattern, usize)> for CodeWord {
     }
 }
 
-pub struct HuffmanEncoder<'a, T: Write> {
-    writer: &'a mut BitWriter<'a, T>,
+impl BitPattern for CodeWord {
+    fn to_bytes(&self) -> Box<[u8]> {
+        Box::new(self.bit_pattern.to_be_bytes())
+    }
+
+    fn bit_len(&self) -> usize {
+        self.length
+    }
+}
+
+pub struct HuffmanTranslator {
     code_word_lookup_table: [Option<CodeWord>; Symbol::MAX as usize],
 }
 
-impl<'a, T: Write> HuffmanEncoder<'a, T> {
-    pub fn new(writer: &'a mut BitWriter<'a, T>, code_lengths: &[SymbolCodeLength]) -> Self {
-        Self::validate_input_code_lengths(code_lengths);
-        let mut encoder = HuffmanEncoder {
-            writer,
-            code_word_lookup_table: [const { None }; Symbol::MAX as usize],
-        };
-        encoder.fill_lookup_table(code_lengths);
-        encoder
-    }
-
-    fn fill_lookup_table(&mut self, code_lengths: &[SymbolCodeLength]) {
+impl<'a> HuffmanTranslator {
+    fn fill_lookup_table<T>(&mut self, code_lengths: &T)
+    where
+        T: DoubleEndedIterator<Item = &'a SymbolCodeLength> + Clone,
+    {
         self.insert_initial_code_word(code_lengths);
         self.insert_following_code_words(code_lengths);
     }
 
-    fn insert_initial_code_word(&mut self, code_lengths: &[SymbolCodeLength]) {
-        let last_code_length = code_lengths.last().expect("code_lengths must not be empty");
+    fn insert_initial_code_word<T>(&mut self, code_lengths: &T)
+    where
+        T: DoubleEndedIterator<Item = &'a SymbolCodeLength> + Clone,
+    {
+        let last_code_length: &SymbolCodeLength = code_lengths
+            .clone()
+            .last()
+            .expect("code_lengths must not be empty");
         let code_word = Self::create_initial_code_word(last_code_length);
         self.set_code_word_for_symbol(last_code_length.symbol, code_word);
     }
 
-    fn insert_following_code_words(&mut self, code_lengths: &[SymbolCodeLength]) {
-        for (current, previous) in code_lengths
-            .iter()
-            .rev()
-            .skip(1)
-            .zip(code_lengths.iter().rev())
-        {
+    fn insert_following_code_words<T>(&mut self, code_lengths: &T)
+    where
+        T: DoubleEndedIterator<Item = &'a SymbolCodeLength> + Clone,
+    {
+        let rev_iterator = code_lengths.clone().rev();
+        for (current, previous) in code_lengths.clone().rev().skip(1).zip(rev_iterator) {
             self.ensure_symbol_was_not_inserted_before(current.symbol);
             let code_word = self.create_code_word(current.length, previous.symbol);
             self.set_code_word_for_symbol(current.symbol, code_word);
         }
     }
 
-    fn create_initial_code_word(code_length: &SymbolCodeLength) -> CodeWord {
-        CodeWord {
-            bit_pattern: 0,
-            length: code_length.length,
+    fn validate_input_code_lengths<T>(code_lengths: &T)
+    where
+        T: DoubleEndedIterator<Item = &'a SymbolCodeLength> + Clone,
+    {
+        let length = code_lengths.clone().count();
+        if length == 0 {
+            panic!("the set of input symbols must not be empty");
+        }
+
+        if length > Symbol::MAX as usize {
+            panic!("can't encode more than {} different symbols", Symbol::MAX);
+        }
+
+        if !code_lengths.clone().rev().is_sorted_by_key(|s| s.length) {
+            panic!("symbols-array needs to be sorted by descending code word length");
+        }
+
+        let first_length = code_lengths.clone().next().unwrap().length;
+        if first_length as u32 > CodeBitPattern::BITS {
+            panic!(
+                "maximum code word length allowed in input is {} bits",
+                CodeBitPattern::BITS
+            );
         }
     }
+}
 
+impl HuffmanTranslator {
     fn create_code_word(&self, length: usize, previous_symbol: Symbol) -> CodeWord {
         let previous_code_word = self
             .get_code_word_for_symbol(previous_symbol)
@@ -78,6 +106,13 @@ impl<'a, T: Write> HuffmanEncoder<'a, T> {
         }
     }
 
+    fn create_initial_code_word(code_length: &SymbolCodeLength) -> CodeWord {
+        CodeWord {
+            bit_pattern: 0,
+            length: code_length.length,
+        }
+    }
+
     fn calculate_bit_pattern(previous_code_word: &CodeWord) -> CodeBitPattern {
         let increment = 1 << (CodeBitPattern::BITS - previous_code_word.length as u32);
         previous_code_word.bit_pattern + increment
@@ -87,7 +122,7 @@ impl<'a, T: Write> HuffmanEncoder<'a, T> {
         self.code_word_lookup_table[symbol as usize] = Some(code_word);
     }
 
-    fn get_code_word_for_symbol(&self, symbol: Symbol) -> &Option<CodeWord> {
+    pub fn get_code_word_for_symbol(&self, symbol: Symbol) -> &Option<CodeWord> {
         &self.code_word_lookup_table[symbol as usize]
     }
 
@@ -103,38 +138,44 @@ impl<'a, T: Write> HuffmanEncoder<'a, T> {
     fn symbol_exists(&self, symbol: Symbol) -> bool {
         self.code_word_lookup_table[symbol as usize].is_some()
     }
+}
 
-    fn validate_input_code_lengths(code_lengths: &[SymbolCodeLength]) {
-        if code_lengths.is_empty() {
-            panic!("the set of input symbols must not be empty");
-        }
-
-        if code_lengths.len() > Symbol::MAX as usize {
-            panic!("can't encode more than {} different symbols", Symbol::MAX);
-        }
-
-        if !code_lengths.iter().rev().is_sorted_by_key(|s| s.length) {
-            panic!("symbols-array needs to be sorted by descending code word length");
-        }
-
-        if code_lengths[0].length as u32 > CodeBitPattern::BITS {
-            panic!(
-                "maximum code word length allowed in input is {} bits",
-                CodeBitPattern::BITS
-            );
-        }
+impl<'a, T, I> From<T> for HuffmanTranslator
+where
+    T: IntoIterator<Item = &'a SymbolCodeLength, IntoIter = I>,
+    I: DoubleEndedIterator<Item = &'a SymbolCodeLength> + Clone,
+{
+    fn from(code_lengths: T) -> Self {
+        let code_lengths_iterator = code_lengths.into_iter();
+        Self::validate_input_code_lengths(&code_lengths_iterator);
+        let mut encoder = HuffmanTranslator {
+            code_word_lookup_table: [const { None }; Symbol::MAX as usize],
+        };
+        encoder.fill_lookup_table(&code_lengths_iterator);
+        encoder
     }
 }
 
-impl<T: Write> Write for HuffmanEncoder<'_, T> {
+pub struct HuffmanWriter<'a, T: Write> {
+    translator: &'a HuffmanTranslator,
+    writer: &'a mut BitWriter<'a, T>,
+}
+
+impl<'a, T: Write> HuffmanWriter<'a, T> {
+    pub fn new(translator: &'a HuffmanTranslator, writer: &'a mut BitWriter<'a, T>) -> Self {
+        Self { translator, writer }
+    }
+}
+
+impl<T: Write> Write for HuffmanWriter<'_, T> {
     fn write(&mut self, buf: &[Symbol]) -> io::Result<usize> {
         for &symbol in buf {
             let code = self
+                .translator
                 .get_code_word_for_symbol(symbol)
                 .as_ref()
                 .ok_or(io::Error::from(io::ErrorKind::InvalidInput))?;
-            let bytes = code.bit_pattern.to_be_bytes();
-            self.writer.write_bits(&bytes, code.length)?;
+            self.writer.write_bit_pattern(code)?;
         }
         Ok(buf.len())
     }
@@ -152,25 +193,21 @@ mod test {
         code::HuffmanCodeGenerator, length_limited::LengthLimitedHuffmanCodeGenerator,
         SymbolCodeLength, SymbolFrequency,
     };
-    use super::{CodeWord, HuffmanEncoder};
+    use super::{CodeWord, HuffmanTranslator, HuffmanWriter};
     use crate::binary_stream::BitWriter;
 
     #[test]
     #[should_panic]
     fn test_unsorted_symbols() {
-        let mut output: Vec<u8> = Vec::new();
-        let mut writer = BitWriter::new(&mut output, true);
         let unsorted_symbols = [(0, 1), (1, 5), (2, 4), (3, 3)].map(SymbolCodeLength::from);
-        let _ = HuffmanEncoder::new(&mut writer, &unsorted_symbols);
+        let _ = HuffmanTranslator::from(unsorted_symbols.as_slice());
     }
 
     #[test]
     #[should_panic]
     fn test_max_code_length_too_long() {
-        let mut output: Vec<u8> = Vec::new();
-        let mut writer = BitWriter::new(&mut output, true);
         let symbols = [(0, 17), (1, 5), (2, 4), (3, 3)].map(SymbolCodeLength::from);
-        let _ = HuffmanEncoder::new(&mut writer, &symbols);
+        let _ = HuffmanTranslator::from(&symbols);
     }
 
     const TEST_SYMBOL_SEQUENCE: &[u8] = &[
@@ -191,15 +228,14 @@ mod test {
         (20,5), (21, 14), (22, 30), (23, 4), (24, 7), (25, 9), (26, 4), (27, 42), (28, 1), 
         (29, 14), (30, 12), (31, 32), (32, 1)];
 
-    fn create_test_encoder<'a, T: Write>(
+    fn create_test_translator(
         sorted_frequencies: &[SymbolFrequency],
         length: usize,
-        writer: &'a mut BitWriter<'a, T>,
-    ) -> HuffmanEncoder<'a, T> {
+    ) -> HuffmanTranslator {
         let mut generator = LengthLimitedHuffmanCodeGenerator::new(length);
         let mut code_lengths = generator.generate_with_symbols(sorted_frequencies);
         code_lengths[0].length += 1;
-        HuffmanEncoder::new(writer, &code_lengths)
+        HuffmanTranslator::from(&code_lengths)
     }
 
     #[test]
@@ -209,10 +245,11 @@ mod test {
 
         let mut output: Vec<u8> = Vec::new();
         let mut writer = BitWriter::new(&mut output, false);
-        let mut encoder = create_test_encoder(&sorted_syms, 6, &mut writer);
+        let translator = create_test_translator(&sorted_syms, 6);
+        let mut writer = HuffmanWriter::new(&translator, &mut writer);
 
-        encoder.write_all(TEST_SYMBOL_SEQUENCE)?;
-        encoder.flush()?;
+        writer.write_all(TEST_SYMBOL_SEQUENCE)?;
+        writer.flush()?;
 
         assert_eq!(
             TEST_BYTE_SEQUENCE.len(),
@@ -237,7 +274,7 @@ mod test {
             bit_pattern: 0b1100_0000_0000_0000,
             length: 4,
         };
-        let pattern = HuffmanEncoder::<Vec<u8>>::calculate_bit_pattern(&previous_code_word);
+        let pattern = HuffmanTranslator::calculate_bit_pattern(&previous_code_word);
         let expected_pattern = 0b1101_0000_0000_0000u16;
         assert_eq!(pattern, expected_pattern, "Pattern does not match");
     }
@@ -248,7 +285,7 @@ mod test {
             bit_pattern: 0b1101_0000_0000_0000u16,
             length: 5,
         };
-        let pattern = HuffmanEncoder::<Vec<u8>>::calculate_bit_pattern(&previous_code_word);
+        let pattern = HuffmanTranslator::calculate_bit_pattern(&previous_code_word);
         let expected_pattern = 0b1101_1000_0000_0000u16;
         assert_eq!(pattern, expected_pattern, "Pattern does not match");
     }
@@ -259,7 +296,7 @@ mod test {
             bit_pattern: 0b1111_0000_0000_0000u16,
             length: 5,
         };
-        let pattern = HuffmanEncoder::<Vec<u8>>::calculate_bit_pattern(&previous_code_word);
+        let pattern = HuffmanTranslator::calculate_bit_pattern(&previous_code_word);
         let expected_pattern = 0b1111_1000_0000_0000u16;
         assert_eq!(pattern, expected_pattern, "Pattern does not match");
     }

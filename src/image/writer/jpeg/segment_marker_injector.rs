@@ -1,6 +1,6 @@
 use std::io::Write;
 
-struct SegmentMarkerInjector<'a, T: Write> {
+pub struct SegmentMarkerInjector<'a, T: Write> {
     writer: &'a mut T,
 }
 
@@ -10,7 +10,7 @@ impl<'a, T: Write> SegmentMarkerInjector<'a, T> {
     }
 }
 
-impl<'a, T: Write> Write for SegmentMarkerInjector<'a, T> {
+impl<T: Write> Write for SegmentMarkerInjector<'_, T> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let mut bytes_written = 0;
         for &b in buf {
@@ -48,7 +48,7 @@ mod tests {
         let mut output_sequence: Vec<u8> = Vec::new();
 
         let mut writer = SegmentMarkerInjector::new(&mut output_sequence);
-        writer.write(&test_sequence).expect("writing failed");
+        writer.write_all(&test_sequence).expect("writing failed");
 
         assert_eq!(expect_sequence.len(), output_sequence.len());
 

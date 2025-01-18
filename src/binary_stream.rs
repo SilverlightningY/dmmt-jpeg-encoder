@@ -1,6 +1,8 @@
 use std::io;
 use std::io::Write;
 
+use crate::BitPattern;
+
 pub struct BitWriter<'a, T: Write> {
     /// the underlying output stream
     writer: &'a mut T,
@@ -61,6 +63,10 @@ impl<'a, T: Write> BitWriter<'a, T> {
             }
         }
         Ok(bytes_written)
+    }
+
+    pub fn write_bit_pattern(&mut self, pattern: &impl BitPattern) -> Result<usize, io::Error> {
+        self.write_bits(&pattern.to_bytes(), pattern.bit_len())
     }
 }
 

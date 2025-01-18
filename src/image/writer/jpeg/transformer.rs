@@ -5,7 +5,7 @@ use quantizer::Quantizer;
 use symbol_counting::HuffmanCount;
 use threadpool::ThreadPool;
 
-use super::{Image, JpegTransformationOptions, OutputImage};
+use super::{padder::PaddedImage, Image, JpegTransformationOptions, OutputImage};
 use crate::{
     color::YCbCrColorFormat,
     cosine_transform::{arai::AraiDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer},
@@ -32,7 +32,7 @@ type SeparateColorChannels<T> = CombinedColorChannels<ColorChannel<T>>;
 
 pub struct Transformer<'a> {
     options: &'a JpegTransformationOptions,
-    image: &'a Image<f32>,
+    image: PaddedImage,
     threadpool: &'a ThreadPool,
 }
 
@@ -42,14 +42,19 @@ impl<'a> Transformer<'a> {
         options: &'a JpegTransformationOptions,
         threadpool: &'a ThreadPool,
     ) -> Self {
+        let width_pad_multiple = (options.chroma_subsampling_preset.horizontal_rate() * 8) as u16;
+        let height_pad_multiple = (options.chroma_subsampling_preset.vertical_rate() * 8) as u16;
+
+        let padded_image = PaddedImage::new(image, width_pad_multiple, height_pad_multiple);
+
         Transformer {
             options,
-            image,
+            image: padded_image,
             threadpool,
         }
     }
 
-    fn convert_color_format(&self) -> impl Iterator<Item = YCbCrColorFormat<f32>> + use<'a> {
+    fn convert_color_format(&self) -> impl Iterator<Item = YCbCrColorFormat<f32>> + use<'_> {
         self.image.dots.iter().map(YCbCrColorFormat::from)
     }
 
@@ -66,8 +71,8 @@ impl<'a> Transformer<'a> {
             chroma_red_dots.push(dot.chroma_red);
             chroma_blue_dots.push(dot.chroma_blue);
         }
-        let width = self.image.width;
-        let height = self.image.height;
+        let width = self.image.padded_width;
+        let height = self.image.padded_height;
         SeparateColorChannels {
             luma: ColorChannel::new(width, height, luma_dots),
             chroma_red: ColorChannel::new(width, height, chroma_red_dots),
@@ -177,13 +182,12 @@ impl<'a> Transformer<'a> {
         let quantized_channels = self.quantize_all_channels(&color_channels);
         let entangled_channels = entangle_channels(
             quantized_channels,
-            (self.image.width / 16).into(),
+            self.image.padded_width as usize / 8,
             self.options.chroma_subsampling_preset,
         );
         let categorized_channels = self.categorize_all_channels(entangled_channels);
 
         let luma_huffman_symbol_counts = HuffmanCount::from(&categorized_channels.luma);
-
         let chroma_huffman_symbol_counts = HuffmanCount::from_iter(
             categorized_channels
                 .chroma_blue

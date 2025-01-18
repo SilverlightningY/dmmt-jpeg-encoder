@@ -2,7 +2,7 @@ use std::io::Write;
 
 use dmmt_jpeg_encoder::binary_stream::BitWriter;
 use dmmt_jpeg_encoder::huffman::code::HuffmanCodeGenerator;
-use dmmt_jpeg_encoder::huffman::encoder::HuffmanEncoder;
+use dmmt_jpeg_encoder::huffman::encoder::{HuffmanTranslator, HuffmanWriter};
 use dmmt_jpeg_encoder::huffman::length_limited::LengthLimitedHuffmanCodeGenerator;
 use dmmt_jpeg_encoder::huffman::tree::HuffmanTree;
 use dmmt_jpeg_encoder::huffman::SymbolFrequency;
@@ -28,7 +28,8 @@ fn main() {
     let mut writer = BitWriter::new(&mut output, true);
     let mut code_lengths = generator.generate_with_symbols(&syms_and_freqs);
     code_lengths[0].length += 1;
-    let mut encoder = HuffmanEncoder::new(&mut writer, &code_lengths);
+    let translator = HuffmanTranslator::from(&code_lengths);
+    let mut encoder = HuffmanWriter::new(&translator, &mut writer);
 
     /* an example sequence to encode that roughly matches the relative frequencies at the beginning */
     let encoding_sequence: Vec<u8> = vec![

@@ -18,6 +18,8 @@ pub enum Error {
     FailedToWriteStartOfFrame,
     FailedToWriteStartOfScan,
     FailedToWriteImageData,
+    HuffmanSymbolNotPresentInTranslator(u8, &'static str),
+    FailedToWriteBlock,
 }
 
 impl Display for Error {
@@ -84,6 +86,14 @@ impl Display for Error {
             Error::FailedToWriteStartOfFrame => write!(f, "Failed to write start of frame segment"),
             Error::FailedToWriteStartOfScan => write!(f, "Failed to write start of scan segment"),
             Error::FailedToWriteImageData => write!(f, "Failed to write image data"),
+            Error::HuffmanSymbolNotPresentInTranslator(symbol, translator) => {
+                write!(
+                    f,
+                    "Huffman symbol '{}' not present in {} translator",
+                    symbol, translator
+                )
+            }
+            Error::FailedToWriteBlock => write!(f, "Failed to write image block"),
         }
     }
 }
