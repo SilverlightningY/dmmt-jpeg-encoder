@@ -8,7 +8,7 @@ pub fn entangle_channels<'a, U: Copy + 'a, T: Iterator<Item = U> + 'a>(
     subsampling_preset: ChromaSubsamplingPreset,
 ) -> CombinedColorChannels<Box<dyn Iterator<Item = U> + 'a>> {
     match subsampling_preset {
-        ChromaSubsamplingPreset::P444 | ChromaSubsamplingPreset::P422 => Self {
+        ChromaSubsamplingPreset::P444 | ChromaSubsamplingPreset::P422 => CombinedColorChannels {
             luma: Box::new(linear_blocks.luma),
             chroma_blue: Box::new(linear_blocks.chroma_blue),
             chroma_red: Box::new(linear_blocks.chroma_red),
@@ -30,6 +30,7 @@ pub struct QuadFoldingIterator<U, T: Iterator<Item = U>> {
     two_line_buffer: Vec<U>,
     two_line_buffer_index: usize,
     line_length: usize,
+    two_line_buffer_length: usize
 }
 
 impl<U: Copy, T: Iterator<Item = U>> QuadFoldingIterator<U, T> {
@@ -39,15 +40,12 @@ impl<U: Copy, T: Iterator<Item = U>> QuadFoldingIterator<U, T> {
             two_line_buffer: Vec::with_capacity(line_length * 2),
             two_line_buffer_index: line_length * 2,
             line_length,
+	    two_line_buffer_length: line_length*2
         }
     }
 
     fn is_buffer_consumed(&self) -> bool {
         self.two_line_buffer_index >= self.two_line_buffer.len()
-    }
-
-    fn get_buffer_length(&self) -> usize {
-        self.line_length * 2
     }
 
     fn refill_buffer(&mut self) {
@@ -59,7 +57,7 @@ impl<U: Copy, T: Iterator<Item = U>> QuadFoldingIterator<U, T> {
         while let Some(item) = self.linear_backlog.next() {
             self.two_line_buffer.push(item);
             items_pushed += 1;
-            if items_pushed == self.get_buffer_length() {
+            if items_pushed == self.two_line_buffer_length {
                 return;
             }
         }
