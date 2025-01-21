@@ -5,15 +5,13 @@ use crate::error::Error;
 use crate::huffman::encoder::HuffmanTranslator;
 use crate::huffman::{Symbol, SymbolCodeLength};
 use crate::{BitPattern, Result};
-use core::panic;
 use std::fmt::Display;
-use std::io;
 use std::io::Write;
+use std::{io, iter};
 
 use super::segment_marker_injector::SegmentMarkerInjector;
-use super::transformer::{
-    categorize::CategorizedBlock, frequency_block::FrequencyBlock, quantizer::QUANTIZATION_TABLE,
-};
+use super::transformer::categorize::CategorizedBlock;
+use super::transformer::frequency_block::ZigZagIterator;
 use super::OutputImage;
 use crate::logger;
 
@@ -190,17 +188,22 @@ impl<'a, T: Write> Encoder<'a, T> {
     }
 
     fn write_all_quantization_tables(&mut self) -> Result<()> {
-        self.write_quantization_table(0)?;
-        self.write_quantization_table(1)
+        self.write_luminance_quantization_table()?;
+        self.write_chominance_quantization_table()
     }
 
-    fn write_quantization_table(&mut self, number: u8) -> Result<()> {
-        let mut header: Vec<u8> = Vec::new();
-        header.push(number);
+    fn write_luminance_quantization_table(&mut self) -> Result<()> {
+        self.write_quantization_table(0, self.image.quantization_table_pair.luma_table)
+    }
 
-        FrequencyBlock::new(QUANTIZATION_TABLE)
-            .iter_zig_zag()
-            .for_each(|f| header.push(*f));
+    fn write_chominance_quantization_table(&mut self) -> Result<()> {
+        self.write_quantization_table(1, self.image.quantization_table_pair.chroma_table)
+    }
+
+    fn write_quantization_table(&mut self, number: u8, table: &[u8; 64]) -> Result<()> {
+        let header: Vec<u8> = iter::once(number)
+            .chain(ZigZagIterator::from(table).copied())
+            .collect();
         self.write_segment(SegmentMarker::QuantizationTable, &header)
             .map_err(|_| Error::FailedToWriteQuantizationTable)
     }
@@ -210,12 +213,12 @@ impl<'a, T: Write> Encoder<'a, T> {
         // let height_bytes = image.height.to_be_bytes();
         #[rustfmt::skip]
         let content = &[
-            b'J', b'F', b'I', b'F', b'\0',// Identifier
-            0x01, 0x02,             // Version
-            0x00,                   // Density unit
-            0x00, 0x48, 0x00, 0x48, // Density (72/0x48 common used value)
-            0,                      // X Thumbnail
-            0                       // Y Thumbnail
+            b'J', b'F', b'I', b'F', b'\0', // Identifier
+            0x01, 0x02,                    // Version
+            0x00,                          // Density unit
+            0x00, 0x48, 0x00, 0x48,        // Density (72/0x48 common used value)
+            0,                             // X Thumbnail
+            0                              // Y Thumbnail
         ];
         self.write_segment(SegmentMarker::JfifApplication, content)
             .map_err(|_| Error::FailedToWriteJfifApplicationHeader)
@@ -229,13 +232,13 @@ impl<'a, T: Write> Encoder<'a, T> {
 
         #[rustfmt::skip]
         let content = &[
-            self.image.bits_per_channel,                   // bits per pixel
+            self.image.bits_per_channel,      // bits per pixel
             height_bytes[0], height_bytes[1], // image height
             width_bytes[0], width_bytes[1],   // image width
-            0x03,                    // components (1 or 3)
-            0x01, ratio, 0x00,         // 0x01=y component, sampling factor, quant. table
-            0x02, 0x11, 0x01,       // 0x02=Cb component, ...
-            0x03, 0x11, 0x01,       // 0x03=Cr component, ...
+            0x03,                             // components (1 or 3)
+            0x01, ratio, 0x00,                // 0x01=y component, sampling factor, quant. table
+            0x02, 0x11, 0x01,                 // 0x02=Cb component, ...
+            0x03, 0x11, 0x01,                 // 0x03=Cr component, ...
             ];
         self.write_segment(SegmentMarker::StartOfFrame, content)
             .map_err(|_| Error::FailedToWriteStartOfFrame)
@@ -243,17 +246,16 @@ impl<'a, T: Write> Encoder<'a, T> {
 
     fn write_start_of_scan(&mut self) -> Result<()> {
         let data = [
-            0x03, // number of components (1=mono, 3=colour)
-            0x01,
-            0b0000_0001, // 0x01=Y, 0x00=Huffman tables to use 0..3 dc, 0..3 ac (1 and 0)
-            0x02,
-            0b0010_0011, // 0x02=Cb, 0x11=Huffman tables to use 0..3 dc, 0..3 ac (3 and 2)
-            0x03,
-            0b0010_0011, // 0x03=Cr, 0x11=Huffman table to use 0..3 dc, 0..3 ac (3 and 2)
-            // I never figured out the actual meaning of these next 3 bytes
-            0x00, // start of spectral selection or predictor selection
-            0x3F, // end of spectral selection
-            0x00, // successive approximation bit position or point transform
+            0x03,        // number of components (1=mono, 3=colour)
+            0x01,        // 0x01=Y
+            0b0000_0001, // 0x00=Huffman tables to use 0..3 dc, 0..3 ac (1 and 0)
+            0x02,        // 0x02=Cb
+            0b0010_0011, // 0x11=Huffman tables to use 0..3 dc, 0..3 ac (3 and 2)
+            0x03,        // 0x03=Cr
+            0b0010_0011, // 0x11=Huffman table to use 0..3 dc, 0..3 ac (3 and 2)
+            0x00,        // start of spectral selection or predictor selection
+            0x3F,        // end of spectral selection
+            0x00,        // successive approximation bit position or point transform
         ];
         self.write_segment(SegmentMarker::StartOfScan, &data)
             .map_err(|_| Error::FailedToWriteStartOfScan)
@@ -407,7 +409,8 @@ mod tests {
     use crate::{
         huffman::SymbolCodeLength,
         image::{
-            subsampling::ChromaSubsamplingPreset, writer::jpeg::transformer::CombinedColorChannels,
+            subsampling::ChromaSubsamplingPreset,
+            writer::jpeg::{transformer::CombinedColorChannels, QuantizationTablePreset},
         },
     };
 
@@ -439,6 +442,7 @@ mod tests {
                 chroma_red: Vec::new(),
                 chroma_blue: Vec::new(),
             },
+            quantization_table_pair: QuantizationTablePreset::Specification.to_pair(),
         }
     }
 
@@ -517,7 +521,9 @@ mod tests {
         let mut output = Vec::new();
         let image = create_test_image();
         let mut encoder = Encoder::new(&mut output, &image);
-        encoder.write_quantization_table(2).unwrap();
+        encoder
+            .write_quantization_table(2, image.quantization_table_pair.luma_table)
+            .unwrap();
 
         assert_eq!(
             output,
