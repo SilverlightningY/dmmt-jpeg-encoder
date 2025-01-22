@@ -15,7 +15,7 @@ impl<T> FrequencyBlock<T> {
     }
 
     pub fn iter_zig_zag(&self) -> ZigZagIterator<'_, T> {
-        ZigZagIterator::from_block(self)
+        ZigZagIterator::from(self)
     }
 
     pub fn dc(&self) -> &T {
@@ -24,14 +24,23 @@ impl<T> FrequencyBlock<T> {
 }
 
 pub struct ZigZagIterator<'a, T> {
-    block: &'a FrequencyBlock<T>,
+    data: &'a [T; 64],
     next_index: usize,
 }
 
-impl<'a, T> ZigZagIterator<'a, T> {
-    pub fn from_block(block: &'a FrequencyBlock<T>) -> Self {
+impl<'a, T> From<&'a FrequencyBlock<T>> for ZigZagIterator<'a, T> {
+    fn from(block: &'a FrequencyBlock<T>) -> Self {
         Self {
-            block,
+            data: &block.data,
+            next_index: 0,
+        }
+    }
+}
+
+impl<'a, T> From<&'a [T; 64]> for ZigZagIterator<'a, T> {
+    fn from(data: &'a [T; 64]) -> Self {
+        Self {
+            data,
             next_index: 0,
         }
     }
@@ -45,7 +54,7 @@ impl<'a, T> Iterator for ZigZagIterator<'a, T> {
             return None;
         }
         let block_index = ZIG_ZAG_ORDERED_BLOCK_INDEXES[self.next_index];
-        let return_value = &self.block.data[block_index];
+        let return_value = &self.data[block_index];
         self.next_index += 1;
         Some(return_value)
     }

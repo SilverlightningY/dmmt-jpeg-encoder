@@ -9,7 +9,7 @@ use error::Error;
 use image::{
     reader::ppm::PPMImageReader,
     subsampling::ChromaSubsamplingPreset,
-    writer::jpeg::{JpegImageWriter, JpegTransformationOptions},
+    writer::jpeg::{JpegImageWriter, JpegTransformationOptions, QuantizationTablePreset},
     ImageReader, ImageWriter,
 };
 use threadpool::ThreadPool;
@@ -36,6 +36,7 @@ pub struct Arguments {
     bits_per_channel: u8,
     chroma_subsampling_preset: ChromaSubsamplingPreset,
     number_of_threads: usize,
+    quantization_table_preset: QuantizationTablePreset,
 }
 
 fn open_input_file(file_path: &Path) -> Result<File> {

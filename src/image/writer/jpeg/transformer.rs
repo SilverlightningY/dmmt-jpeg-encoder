@@ -5,7 +5,9 @@ use quantizer::Quantizer;
 use symbol_counting::HuffmanCount;
 use threadpool::ThreadPool;
 
-use super::{padder::PaddedImage, Image, JpegTransformationOptions, OutputImage};
+use super::{
+    padder::PaddedImage, Image, JpegTransformationOptions, OutputImage, QuantizationTablePair,
+};
 use crate::{
     color::YCbCrColorFormat,
     cosine_transform::{arai::AraiDiscrete8x8CosineTransformer, Discrete8x8CosineTransformer},
@@ -34,6 +36,7 @@ pub struct Transformer<'a> {
     options: &'a JpegTransformationOptions,
     image: PaddedImage,
     threadpool: &'a ThreadPool,
+    quantization_table_pair: QuantizationTablePair<'static>,
 }
 
 impl<'a> Transformer<'a> {
@@ -51,6 +54,7 @@ impl<'a> Transformer<'a> {
             options,
             image: padded_image,
             threadpool,
+            quantization_table_pair: options.quantization_table_preset.to_pair(),
         }
     }
 
@@ -147,11 +151,18 @@ impl<'a> Transformer<'a> {
         &self,
         channels: &'b SeparateColorChannels<f32>,
     ) -> CombinedColorChannels<impl Iterator<Item = FrequencyBlock<i16>> + use<'b>> {
-        let luma_quantizer = Quantizer::new(&channels.luma);
+        let luma_quantizer =
+            Quantizer::new(&channels.luma, self.quantization_table_pair.luma_table);
         let luma = luma_quantizer.quantize_channel();
-        let chroma_red_quantizer = Quantizer::new(&channels.chroma_red);
+        let chroma_red_quantizer = Quantizer::new(
+            &channels.chroma_red,
+            self.quantization_table_pair.chroma_table,
+        );
         let chroma_red = chroma_red_quantizer.quantize_channel();
-        let chroma_blue_quantizer = Quantizer::new(&channels.chroma_blue);
+        let chroma_blue_quantizer = Quantizer::new(
+            &channels.chroma_blue,
+            self.quantization_table_pair.chroma_table,
+        );
         let chroma_blue = chroma_blue_quantizer.quantize_channel();
         CombinedColorChannels {
             luma,
@@ -174,7 +185,7 @@ impl<'a> Transformer<'a> {
         }
     }
 
-    pub fn transform(&self) -> Result<OutputImage> {
+    pub fn transform(self) -> Result<OutputImage> {
         let color_dots = self.convert_color_format();
         let color_channels = self.split_into_color_channels(color_dots);
         let mut color_channels = self.subsample_all_channels(&color_channels);
@@ -205,6 +216,7 @@ impl<'a> Transformer<'a> {
             chroma_ac_huffman: chroma_huffman_symbol_counts.generate_ac_huffman_code(),
             chroma_dc_huffman: chroma_huffman_symbol_counts.generate_dc_huffman_code(),
             blockwise_image_data: categorized_channels,
+            quantization_table_pair: self.quantization_table_pair,
         })
     }
 }

@@ -1,4 +1,5 @@
 use crate::image::subsampling::ChromaSubsamplingPreset;
+use crate::image::writer::jpeg::QuantizationTablePreset;
 use crate::Arguments;
 use clap::{
     arg, builder::PossibleValue, crate_authors, crate_description, crate_name, crate_version,
@@ -36,7 +37,8 @@ impl CLIParser {
         let command = Self::register_output_file_argument(command);
         let command = Self::register_bits_per_channel_argument(command);
         let command = Self::register_chroma_subsampling_preset_argument(command);
-        Self::register_threads_argument(command)
+        let command = Self::register_threads_argument(command);
+        Self::register_quantization_table_preset_argument(command)
     }
 
     fn register_input_file_argument(command: Command) -> Command {
@@ -57,6 +59,10 @@ impl CLIParser {
 
     fn register_threads_argument(command: Command) -> Command {
         command.arg(Self::create_threads_argument())
+    }
+
+    fn register_quantization_table_preset_argument(command: Command) -> Command {
+        command.arg(Self::create_quantization_table_preset_argument())
     }
 
     fn create_base_command() -> Command {
@@ -102,6 +108,12 @@ impl CLIParser {
             .value_parser(value_parser!(usize))
     }
 
+    fn create_quantization_table_preset_argument() -> Arg {
+        arg!(quantization_table_preset: -q --quantization_table <TABLE> "Quantization table preset")
+            .default_value("Specification")
+            .value_parser(value_parser!(QuantizationTablePreset))
+    }
+
     fn extract_arguments(matches: &ArgMatches) -> Arguments {
         Arguments {
             input_file: Self::extract_input_file_argument(matches),
@@ -109,6 +121,7 @@ impl CLIParser {
             chroma_subsampling_preset: Self::extract_chroma_subsampling_preset_argument(matches),
             bits_per_channel: Self::extract_bits_per_channel_argument(matches),
             number_of_threads: Self::extract_threads_argument(matches),
+            quantization_table_preset: Self::extract_quantization_table_preset_argument(matches),
         }
     }
 
@@ -145,6 +158,13 @@ impl CLIParser {
         matches
             .get_one::<usize>("threads")
             .expect("Required argument threads not provided")
+            .to_owned()
+    }
+
+    fn extract_quantization_table_preset_argument(matches: &ArgMatches) -> QuantizationTablePreset {
+        matches
+            .get_one::<QuantizationTablePreset>("quantization_table_preset")
+            .expect("Quantization table preset must be provided, but was unset")
             .to_owned()
     }
 }

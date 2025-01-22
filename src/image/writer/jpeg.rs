@@ -2,10 +2,12 @@ use std::io::Write;
 
 mod encoder;
 mod padder;
+mod quantization_tables;
 mod segment_marker_injector;
 mod transformer;
 
 use encoder::Encoder;
+pub use quantization_tables::QuantizationTablePreset;
 use threadpool::ThreadPool;
 use transformer::{categorize::CategorizedBlock, CombinedColorChannels, Transformer};
 
@@ -15,9 +17,15 @@ use crate::{
     Arguments,
 };
 
+pub struct QuantizationTablePair<'a> {
+    luma_table: &'a [u8; 64],
+    chroma_table: &'a [u8; 64],
+}
+
 pub struct JpegTransformationOptions {
     pub chroma_subsampling_preset: ChromaSubsamplingPreset,
     pub bits_per_channel: u8,
+    pub quantization_table_preset: QuantizationTablePreset,
 }
 
 impl From<&Arguments> for JpegTransformationOptions {
@@ -25,6 +33,7 @@ impl From<&Arguments> for JpegTransformationOptions {
         Self {
             chroma_subsampling_preset: value.chroma_subsampling_preset,
             bits_per_channel: value.bits_per_channel,
+            quantization_table_preset: value.quantization_table_preset,
         }
     }
 }
@@ -75,4 +84,5 @@ struct OutputImage {
     chroma_ac_huffman: Vec<SymbolCodeLength>,
     chroma_dc_huffman: Vec<SymbolCodeLength>,
     blockwise_image_data: CombinedColorChannels<Vec<CategorizedBlock>>,
+    quantization_table_pair: QuantizationTablePair<'static>,
 }
